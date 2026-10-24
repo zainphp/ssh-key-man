@@ -10,7 +10,11 @@ skm --help
 skm
 ```
 
-Running without a subcommand opens the TUI with visible Keys and Hosts tabs. K opens Keys and H opens Hosts from either page. Tab or Shift+Tab also switches pages when no form or confirmation is open. Each page keeps its selection. Keys are divided into a key list, selected-key details, and status sections. Use Up/Down to select a key, G to create a key, L to load it, D to check the SSH agent, and Q to quit. Each tab shows its Enter action: load the selected key in Keys, or connect to the selected alias in Hosts. Inside a form, Tab switches fields. Escape cancels before generation or goes back from server details. In the server setup question, Escape skips adding the public key and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
+Running without a subcommand opens the TUI with Keys and Hosts pages. K opens Keys and H opens Hosts. Up/Down selects a list item. Left opens the page picker; Right opens the action picker. In either picker, Left/Right chooses an option and Enter activates it. You can also move from the first list item up to the pages, or from the last item down to the actions. Shortcuts G/L/D and A/E/D still work.
+
+Esc quits from a page. In a form or confirmation, Esc cancels that step. Tab does not switch pages; it remains available for moving between form fields, alongside Up/Down. Key creation, server setup, and deletion choices also support arrow keys. Delete confirmations select Cancel by default.
+
+The Keys page has a key list and selected-key details. Results, warnings, and errors appear only when needed in a message popup: Enter dismisses it and Esc quits. There is no persistent Status section. Pressing Enter on a selected key closes the TUI and loads the key into the SSH agent; pressing Enter on a host closes the TUI and starts SSH in the current terminal. The TUI does not reopen after either action, including a failed load or connection. Resize a small terminal to at least 60 columns and 18 rows.
 
 ```sh
 skm hosts               # Add, edit, or delete SSH host aliases
@@ -21,7 +25,7 @@ skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
 skm init zsh            # Print shell configuration (bash and fish also supported)
 ```
 
-Open the Hosts tab with Tab or H, or run `skm hosts` directly to manage `~/.ssh/config`. Press Enter on a selected alias to open an SSH session in the current terminal. The Hosts tab returns when the session ends. Press A to add an alias, E to edit or rename the selected alias, and D to delete it after confirmation. Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields blank to use your SSH settings and defaults. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
+Open the Hosts page with H or the arrow-key page picker, or run `skm hosts` directly to manage `~/.ssh/config`. Press Enter on a selected alias to open an SSH session in the current terminal. The app exits when the SSH session ends. Press A to add an alias, E to edit or rename the selected alias, and D to delete it after confirmation. Up/Down or Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields blank to use your SSH settings and defaults. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
 
 For example, save alias `work`, hostname `server.example.com`, user `alice`, port `2222`, and key file `~/.ssh/id_work`. Then connect with:
 

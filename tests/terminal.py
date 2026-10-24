@@ -193,84 +193,134 @@ def main():
                 hosts.expect("[G] Create key")
                 hosts.send("H")
                 hosts.expect("Hosts in ~/.ssh/config")
-                hosts.send("a")
+                hosts.send("\x1b[C")
+                hosts.expect("Left/Right: pick action")
+                hosts.send("\r")
                 hosts.expect("Add SSH host")
-                hosts.send("office\tserver.example.invalid\talice\t2222\t~/.ssh/id_cli\r")
+                hosts.send("office\x1b[Bserver.example.invalid\x1b[Balice\x1b[B2222\x1b[B~/.ssh/id_cli\r")
                 hosts.expect("Saved office.")
                 saved = config_path.read_text()
                 assert saved.endswith(original), "Adding an alias changed existing content"
                 assert "Port 2222" in saved
+                hosts.send("\r")
+                hosts.expect("Message", visible=False)
                 hosts.send("e")
                 hosts.expect("Edit SSH host")
-                hosts.send("\x15work\t\t\t\x152200\r")
+                hosts.send("\x15work\x1b[B\x1b[B\x1b[B\x152200\r")
                 hosts.expect("Saved work.")
                 settings = subprocess.check_output(["ssh", "-G", "-F", str(config_path), "work"], env=env, text=True, stderr=subprocess.DEVNULL)
                 for value in ["hostname server.example.invalid\n", "user alice\n", "port 2200\n", "identityfile ~/.ssh/id_cli\n"]:
                     assert value in settings, settings
-                hosts.expect("Enter: connect to selected host")
                 hosts.send("\r")
-                hosts.expect("SSH session ready for work")
-                hosts.send("exit\n")
-                hosts.expect("SSH session to work ended.")
-                hosts.send("\r")
-                hosts.expect("SSH session ready for work")
-                hosts.send("fail\n")
-                hosts.expect("Could not connect to SSH alias work")
+                hosts.expect("Message", visible=False)
+                hosts.send("\x1b")
+                hosts.finish()
+            finally:
+                hosts.close()
+            for command, expected in [("exit", 0), ("fail", 1)]:
+                connection = Session(binary, ["hosts"], remote_env, tui=True)
+                try:
+                    connection.expect("Enter: connect and close skm")
+                    connection.send("\r")
+                    connection.expect("SSH session ready for work")
+                    connection.send(command + "\n")
+                    if expected:
+                        connection.expect("Could not connect to SSH alias work")
+                    connection.finish(expected=expected)
+                    assert connection.transcript.count(b"\x1b[?1049h") == 1, "The TUI reopened after SSH"
+                finally:
+                    connection.close()
+            hosts = Session(binary, ["hosts"], env, tui=True)
+            try:
+                hosts.expect("Hosts in ~/.ssh/config")
                 hosts.send("d")
                 hosts.expect("Delete SSH host")
-                hosts.send("n")
+                hosts.send("\r")
                 hosts.expect("Delete SSH host", visible=False)
-                assert "Host work" in config_path.read_text(), "Cancelling deletion removed an alias"
+                assert "Host work" in config_path.read_text(), "The default confirmation deleted an alias"
                 hosts.send("d")
                 hosts.expect("Delete SSH host")
-                hosts.send("y")
+                hosts.send("\x1b[B\r")
                 hosts.expect("Deleted alias work.")
                 assert "Host work" not in config_path.read_text()
                 assert original in config_path.read_text()
-                hosts.send("q")
+                hosts.send("\r")
+                hosts.expect("Message", visible=False)
+                hosts.send("\x1b")
                 hosts.finish()
                 assert list((home / ".ssh").glob("config.skm-backup-*")), "No config backup was created"
             finally:
                 hosts.close()
             tui = Session(binary, [], env, tui=True)
             try:
-                tui.expect("ssh-key-man")
-                tui.expect("Tab: switch tabs")
-                tui.expect("Enter: load selected key into agent")
+                tui.expect("Enter: load key and close skm")
                 tui.expect("Key details")
+                assert " Status " not in tui.screen()
                 tui.send("\t")
+                tui.send("\x1b[D")
+                tui.expect("Left/Right: pick page")
+                tui.send("\x1b[C")
                 tui.expect("Hosts in ~/.ssh/config")
-                tui.send("a")
+                tui.send("\r")
+                tui.expect("Enter: connect and close skm")
+                tui.send("\x1b[C\r")
                 tui.expect("Add SSH host")
                 tui.send("\x1b")
                 tui.expect("Add SSH host", visible=False)
-                tui.send("\x1b[Z")
+                tui.send("K")
                 tui.expect("[G] Create key")
                 tui.send("g")
                 tui.expect("Create key: step 1 of 3")
-                tui.send(" \t" + "\x7f" * len("id_rsa") + "id_tui\r")
+                tui.send("\x1b[C\x1b[B" + "\x7f" * len("id_rsa") + "id_tui\r")
                 tui.expect("Enter passphrase")
                 tui.send("\n")
                 tui.expect("Enter same passphrase again")
                 tui.send("\n")
                 tui.expect("Add public key: step 2 of 3")
-                tui.send("y")
+                tui.send("\x1b[A\r")
                 tui.expect("Server setup: step 2 of 3")
                 tui.send("\r")
                 tui.expect("Invalid server address.")
                 tui.send("\x1b")
                 tui.expect("Add public key: step 2 of 3")
-                tui.send("n")
+                tui.send("\x1b[B\r")
+                tui.expect("Message")
                 tui.expect("Loaded in agent")
-                tui.send("l")
-                tui.expect("Already loaded")
-                tui.send("d")
-                tui.expect("Shell connection:")
-                tui.send("q")
+                tui.send("\r")
+                tui.expect("Message", visible=False)
+                tui.send("\x1b[C\x1b[C\x1b[C\r")
+                tui.expect("SSH agent ready.")
+                tui.send("\r")
+                tui.expect("Message", visible=False)
+                tui.send("\x1b")
                 tui.finish()
                 assert b"\x1b[?1049l" in tui.transcript, "Alternate screen was not restored"
             finally:
                 tui.close()
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(home / ".ssh/id_00_unloaded")], check=True)
+            load = Session(binary, [], env, tui=True)
+            try:
+                load.expect("Enter: load key and close skm")
+                load.send("\r")
+                load.expect("Loaded in agent")
+                load.finish()
+                assert load.transcript.count(b"\x1b[?1049h") == 1, "The TUI reopened after loading a key"
+                identities = subprocess.check_output(["ssh-add", "-l"], env=env, text=True)
+                key_fingerprint = subprocess.check_output(["ssh-keygen", "-lf", str(home / ".ssh/id_00_unloaded")], text=True).split()[1]
+                assert key_fingerprint in identities
+            finally:
+                load.close()
+            (home / ".ssh/id_00_unloaded").chmod(0o644)
+            failed_load = Session(binary, [], env, tui=True)
+            try:
+                failed_load.expect("Enter: load key and close skm")
+                failed_load.send("\r")
+                failed_load.expect("permissions 600")
+                failed_load.finish(expected=1)
+                assert failed_load.transcript.count(b"\x1b[?1049h") == 1, "The TUI reopened after a failed key load"
+            finally:
+                failed_load.close()
+                (home / ".ssh/id_00_unloaded").chmod(0o600)
             assert (home / ".ssh/id_cli").stat().st_mode & 0o777 == 0o600
             fingerprint = subprocess.check_output(["ssh-keygen", "-lf", str(home / ".ssh/id_tui")], text=True)
             assert fingerprint.startswith("4096 ") and "(RSA)" in fingerprint, fingerprint
@@ -279,7 +329,7 @@ def main():
         finally:
             agent.terminate()
             agent.wait(timeout=5)
-    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, doctor, and terminal restoration")
+    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, doctor, and terminal restoration")
 
 
 if __name__ == "__main__":
