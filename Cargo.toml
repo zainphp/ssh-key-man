@@ -1,0 +1,29 @@
+[package]
+name = "ssh-key-man"
+version = "0.1.0"
+edition = "2021"
+description = "SSH key generation, remote setup, and agent management"
+license = "MIT"
+default-run = "ssh-key-man"
+
+[[bin]]
+name = "ssh-key-man"
+path = "src/main.rs"
+
+[[bin]]
+name = "skm"
+path = "src/bin/skm.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "6"
+libc = "0.2"
+ratatui = "0.29"
+ssh-key = "0.6"
+walkdir = "2"
+which = "8"
+
+[dev-dependencies]
+tempfile = "3"

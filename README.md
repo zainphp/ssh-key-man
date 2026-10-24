@@ -1,0 +1,57 @@
+# ssh-key-man
+
+Create SSH keys, register them on servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
+
+Requires Linux, macOS, or WSL, the current stable Rust toolchain (2021 edition), and OpenSSH's `ssh-keygen`, `ssh-agent`, `ssh-add`, and `ssh-copy-id` in `PATH`. Debian/Ubuntu users can install `build-essential openssh-client`; macOS users need the Command Line Tools and `ssh-copy-id` (for example, `brew install ssh-copy-id`). Native Windows is not supported.
+
+```sh
+cargo install --path . --locked
+skm --help
+skm
+```
+
+Running without a subcommand opens the TUI. Use Up/Down to select a key, G to generate and set up a key, L to load it, D to find or start an agent, and Q to quit. Tab switches wizard fields. Escape cancels before generation or goes back from server details. In the registration question, Escape skips registration and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
+
+```sh
+skm gen                 # Guided generation and optional remote registration
+skm load id_ed25519     # Load one private key from ~/.ssh/
+skm load                # Load all discovered private keys
+skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
+skm init zsh            # Print shell configuration (bash and fish also supported)
+```
+
+Generation supports Ed25519 (default) and RSA 4096. Choose a filename in `~/.ssh/`. Existing private or public files are never overwritten. OpenSSH asks for an optional passphrase using its own hidden terminal prompt; the application never accepts a passphrase argument. The TUI temporarily returns to the normal terminal for passphrase and server login prompts.
+
+After generation, choose whether to register the public key on `user@hostname`, with an optional port. `ssh-copy-id` handles login, permissions, and duplicate public keys on the server. Verify the server's host fingerprint against a trusted source when SSH asks. The app preserves your OpenSSH configuration and host verification settings. It never sends a private key to the server. The saved key is loaded into the agent even if remote registration fails. Remote registration needs password login or another working authentication method; it cannot bypass server policy.
+
+Add this line to `~/.zshrc` or `~/.bashrc`:
+
+```sh
+export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+```
+
+For Fish, add this to `~/.config/fish/config.fish`:
+
+```fish
+set -gx SSH_AUTH_SOCK "$HOME/.ssh/agent.sock"
+```
+
+Run `skm doctor` once to create the link. A child process cannot change its parent shell's environment. `skm init` prints configuration only; it does not edit startup files. After a reboot, run `skm doctor` or load a key to find or start a new agent.
+
+Agent selection checks `SSH_AUTH_SOCK`, then the stable link, then `/tmp/ssh-*/agent.*` (and the system temporary directory on macOS), before starting `ssh-agent`. Each socket must belong to the current user and answer `ssh-add`. Probes time out after three seconds. Multiple instances serialize socket updates with a file lock. A regular file at `~/.ssh/agent.sock` is never replaced. The stable link follows whichever verified agent was selected, including a forwarded agent if that is your active `SSH_AUTH_SOCK`.
+
+The key table shows OpenSSH private keys, including encrypted keys, and standalone `.pub` files. SHA256 fingerprints identify loaded keys without comparing comments or filenames. Public-only keys can be inspected but cannot be loaded. Private keys must be regular files owned by you with permissions 600 (or stricter). Symlinked keys are not followed. Legacy PEM keys are reported with conversion instructions; convert them with `ssh-keygen -p -o -f <filename>` before loading them through this tool. Keep `~/.ssh/` owned by you and not writable by other users.
+
+Do not delete a `.skm-key-*` directory left by an interrupted generation until you have checked for a generated private key inside it. A successful generation removes its staging directory. If registration fails, retry manually with `ssh-copy-id -i ~/.ssh/<filename>.pub -p 22 user@hostname`; if agent loading fails, use `skm load <filename>`.
+
+Development checks:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
+python3 tests/terminal.py
+cargo build --release --locked
+```
+
+Integration tests require OpenSSH. They create disposable keys, including an encrypted key, and isolated temporary agents. They check actual fingerprints, duplicate prevention, socket links, file permissions, mismatched public keys, both binary names, and shell output. Tests never register a key on a remote server. CI runs these checks on Linux and macOS.

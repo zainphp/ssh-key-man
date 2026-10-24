@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check code
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Run tests
+        run: cargo test --all-targets --locked
+      - name: Check terminal workflows
+        run: python3 tests/terminal.py
+      - name: Build both binaries
+        run: cargo build --release --locked
