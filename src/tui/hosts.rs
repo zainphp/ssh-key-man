@@ -216,7 +216,6 @@ impl Hosts {
         let parts = Layout::vertical([
             Constraint::Length(3),
             Constraint::Min(3),
-            Constraint::Length(3),
             Constraint::Length(2),
         ])
         .split(area);
@@ -259,24 +258,7 @@ impl Hosts {
             .highlight_symbol("> ");
             frame.render_stateful_widget(table, parts[1], &mut self.table);
         }
-        let details = self
-            .table
-            .selected()
-            .and_then(|i| self.config.entries.get(i))
-            .map(|e| {
-                format!(
-                    "Alias: {}\nKey file: {}",
-                    e.host.alias,
-                    if e.host.identity_file.is_empty() {
-                        "Use SSH settings"
-                    } else {
-                        &e.host.identity_file
-                    }
-                )
-            })
-            .unwrap_or_default();
-        frame.render_widget(Paragraph::new(details).wrap(Wrap { trim: false }), parts[2]);
-        super::draw_actions(frame, parts[3], true, focus, action);
+        super::draw_actions(frame, parts[2], true, focus, action);
         if self.form.is_some() || self.deleting {
             let width = area.width.min(80);
             let height = area.height.min(18);

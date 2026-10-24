@@ -880,16 +880,10 @@ mod tests {
         app.input(press(KeyCode::Down)).unwrap();
         app.input(press(KeyCode::Char('k'))).unwrap();
         app.input(press(KeyCode::Char('h'))).unwrap();
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|f| app.draw(f)).unwrap();
-        let screen: String = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
-        assert!(screen.contains("Alias: second"));
+        assert_eq!(
+            app.hosts.as_ref().unwrap().connection_alias().unwrap(),
+            "second"
+        );
         app.input(press(KeyCode::Char('e'))).unwrap();
         app.input(press(KeyCode::Down)).unwrap();
         app.input(press(KeyCode::Tab)).unwrap();
