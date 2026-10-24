@@ -64,6 +64,15 @@ The key table shows OpenSSH private keys, including encrypted keys, and standalo
 
 Do not delete a `.skm-key-*` directory left by an interrupted generation until you have checked for a generated private key inside it. A successful generation removes its staging directory. If adding the public key fails, retry manually with `ssh-copy-id -i ~/.ssh/<filename>.pub -p 22 user@hostname`; if agent loading fails, use `skm load <filename>`.
 
+Code layout:
+
+- [`src/cli/`](src/cli/) defines commands and interactive prompts; [`src/commands.rs`](src/commands.rs) runs CLI workflows.
+- [`src/tui/mod.rs`](src/tui/mod.rs) runs the event loop; [`src/tui/terminal.rs`](src/tui/terminal.rs) owns terminal setup and cleanup.
+- [`src/tui/app/`](src/tui/app/) separates application state, operation execution, and rendering. [`src/tui/model.rs`](src/tui/model.rs) defines page, action, and event types; [`src/tui/components.rs`](src/tui/components.rs) holds shared widgets and selection helpers.
+- [`src/tui/hosts/`](src/tui/hosts/) handles host editing; [`src/tui/wizard.rs`](src/tui/wizard.rs) handles key-creation and deletion dialogs.
+- [`src/hosts/`](src/hosts/) separates SSH config editing, parsing, and safe file writes. [`src/keys/`](src/keys/) separates key discovery from key operations.
+- [`src/agent.rs`](src/agent.rs) manages agents; [`src/process.rs`](src/process.rs) runs OpenSSH commands. The split modules keep unit tests in adjacent `tests.rs` files; integration and terminal tests live in [`tests/`](tests/).
+
 Development checks:
 
 ```sh
