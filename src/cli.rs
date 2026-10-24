@@ -9,15 +9,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create a key, optionally register it on a server, and load it into the agent
+    /// Create a key, optionally add its public key to a server, and load it into the SSH agent
     Gen,
     /// Add, edit, or delete SSH host aliases in ~/.ssh/config
     Hosts,
-    /// Load a key from ~/.ssh (loads all private keys when no filename is given)
+    /// Load a key into the SSH agent (loads all private keys in ~/.ssh when no filename is given)
     Load { filename: Option<String> },
-    /// Find or start an SSH agent and repair the stable socket link
+    /// Check the SSH agent, start one if needed, and set up the shell connection
     Doctor,
-    /// Print shell configuration; add the output to your shell startup file
+    /// Print SSH agent settings to add to your shell startup file
     Init {
         #[arg(value_enum, default_value = "bash")]
         shell: Shell,

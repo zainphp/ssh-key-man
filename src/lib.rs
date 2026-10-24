@@ -72,9 +72,9 @@ fn dispatch(cli: cli::Cli) -> Result<()> {
                         "{}: {} ({})",
                         key.path.display(),
                         if loaded {
-                            "Loaded in Agent"
+                            "Loaded in agent"
                         } else {
-                            "Already Loaded"
+                            "Already loaded"
                         },
                         key.fingerprint
                     ),
@@ -94,7 +94,7 @@ fn dispatch(cli: cli::Cli) -> Result<()> {
                 }
             }
             let agent = agent::ensure(&dir)?;
-            println!("Agent socket: {}\nStable socket: {}\nLoaded keys: {}\nAdd the output of skm init to your shell startup file.", agent.socket.display(), dir.join("agent.sock").display(), agent.fingerprints.len());
+            println!("SSH agent connection: {}\nShell connection: {}\nKeys loaded into agent: {}\nAdd the output of skm init to your shell startup file.", agent.socket.display(), dir.join("agent.sock").display(), agent.fingerprints.len());
             Ok(())
         }
         Some(cli::Commands::Init { .. }) => unreachable!(),
@@ -104,7 +104,7 @@ fn dispatch(cli: cli::Cli) -> Result<()> {
 fn generate_wizard(dir: &Path) -> Result<()> {
     keys::require_terminal()?;
     let algorithm = loop {
-        let answer = keys::prompt("Key algorithm [ed25519/rsa] (ed25519): ", "ed25519")?;
+        let answer = keys::prompt("Key type [ed25519/rsa] (ed25519): ", "ed25519")?;
         match answer.to_lowercase().as_str() {
             "ed25519" => break false,
             "rsa" | "rsa4096" => break true,
@@ -114,7 +114,7 @@ fn generate_wizard(dir: &Path) -> Result<()> {
     let default = if algorithm { "id_rsa" } else { "id_ed25519" };
     let name = keys::prompt(&format!("Filename in ~/.ssh/ ({default}): "), default)?;
     println!(
-        "OpenSSH will ask for a passphrase. Leave it empty only if you want an unencrypted key."
+        "OpenSSH will ask for a passphrase to protect the private key. Leave it blank for an unencrypted key."
     );
     let key = keys::generate(dir, &name, algorithm)?;
     println!(
@@ -123,10 +123,7 @@ fn generate_wizard(dir: &Path) -> Result<()> {
         key.fingerprint
     );
     let registration = (|| -> Result<()> {
-        let answer = keys::prompt(
-            "Would you like to register this new key to a remote server now? [y/N] ",
-            "n",
-        )?;
+        let answer = keys::prompt("Add this public key to a server now? [y/N] ", "n")?;
         if answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes") {
             let remote = keys::prompt("Server (user@hostname): ", "")?;
             let port = keys::prompt("SSH port (22): ", "22")?
@@ -138,11 +135,11 @@ fn generate_wizard(dir: &Path) -> Result<()> {
     })();
     let load = agent::ensure(dir).and_then(|mut agent| agent::load(&mut agent, &key));
     if load.is_ok() {
-        println!("Loaded in Agent: {}", key.path.display());
+        println!("Loaded in agent: {}", key.path.display());
     }
     match (registration, load) {
-        (Err(a), Err(b)) => bail!("Key was saved, but registration and agent loading failed.\n{a:#}\n{b:#}\nRetry loading with skm load {name}."),
-        (Err(e), _) => Err(e).context("Key was saved and loaded, but remote setup did not finish. Register it later with ssh-copy-id -i <key>.pub user@hostname."),
+        (Err(a), Err(b)) => bail!("Key was saved, but adding it to the server and loading it into the agent failed.\n{a:#}\n{b:#}\nRetry loading with skm load {name}."),
+        (Err(e), _) => Err(e).context("Key was saved and loaded, but remote setup did not finish. Add it later with ssh-copy-id -i <key>.pub user@hostname."),
         (_, Err(e)) => Err(e).with_context(|| format!("Key was saved, but agent loading failed. Retry with skm load {name}.")),
         _ => Ok(()),
     }

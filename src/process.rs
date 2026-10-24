@@ -55,7 +55,7 @@ pub fn capture(command: &mut Command) -> Result<Output> {
         if start.elapsed() > Duration::from_secs(3) {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("The SSH command did not respond within 3 seconds. Check the agent socket and run skm doctor.");
+            bail!("The SSH command did not respond within 3 seconds. Run skm doctor to check the SSH agent, then try again.");
         }
         thread::sleep(Duration::from_millis(20));
     };
@@ -77,10 +77,10 @@ pub fn interactive(command: &mut Command, action: &str) -> Result<()> {
         .stderr(Stdio::inherit())
         .status()
         .with_context(|| {
-            format!("Could not {action}. Check OpenSSH installation and file permissions.")
+            format!("Could not start the command to {action}. Check that the OpenSSH command is installed and you have permission to run it.")
         })?;
     if !status.success() {
-        bail!("Could not {action} (exit status: {status}). Review the OpenSSH message above and try again.");
+        bail!("Could not {action} ({status}). Check the OpenSSH message for the cause, then try again.");
     }
     Ok(())
 }

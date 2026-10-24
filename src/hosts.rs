@@ -48,7 +48,7 @@ impl Host {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || ".-_:[]%".contains(c))
         {
-            bail!("Invalid hostname. Enter a hostname or IP address without a user or port.");
+            bail!("Invalid server address. Enter a hostname or IP address without a username or port.");
         }
         if !self.user.is_empty()
             && (self.user.starts_with('-')
@@ -57,10 +57,10 @@ impl Host {
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)))
         {
-            bail!("Invalid user. Enter a login name such as alice, without spaces or @.");
+            bail!("Invalid username. Enter a login name such as alice, without spaces or @.");
         }
         if !self.port.is_empty() && self.port.parse::<u16>().ok().filter(|p| *p > 0).is_none() {
-            bail!("Invalid SSH port. Enter a number from 1 to 65535, or leave it empty to inherit your SSH settings.");
+            bail!("Invalid SSH port. Enter a number from 1 to 65535, or leave it blank to use your SSH settings.");
         }
         if self
             .identity_file
@@ -278,7 +278,7 @@ impl Config {
             .get(index)
             .context("The selected host no longer exists. Reopen Hosts and select it again.")?;
         if entry.read_only {
-            bail!("This block has shared host patterns or repeated settings. Edit it directly in ~/.ssh/config to avoid changing other connections.");
+            bail!("This entry matches multiple hosts or has repeated settings. Edit it directly in ~/.ssh/config to avoid changing other connections.");
         }
         Ok(entry)
     }
@@ -294,11 +294,11 @@ impl Config {
             .custom_flags(libc::O_NOFOLLOW)
             .open(dir.join(".skm-config.lock"))
             .context(
-                "Could not open the SSH config lock. Check ~/.ssh/.skm-config.lock permissions.",
+                "Could not prepare to save SSH config. Check permissions for ~/.ssh/.skm-config.lock.",
             )?;
         let meta = lock.metadata()?;
         if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
-            bail!("The SSH config lock has unsafe permissions. Check ~/.ssh/.skm-config.lock ownership and set permissions to 600.");
+            bail!("Could not save SSH config safely. Make sure ~/.ssh/.skm-config.lock is owned by you and has permissions 600.");
         }
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             bail!("Another skm process is editing SSH config. Wait for it to finish, then reopen Hosts.");

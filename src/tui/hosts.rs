@@ -45,7 +45,7 @@ impl Hosts {
     }
 
     pub fn new(dir: &Path) -> Result<Self> {
-        let mut hosts = Self { config: Config::load(dir)?, table: TableState::default(), form: None, deleting: false, message: "Connect with ssh <alias>. Blank fields inherit your SSH settings. Shared patterns are read-only.".into() };
+        let mut hosts = Self { config: Config::load(dir)?, table: TableState::default(), form: None, deleting: false, message: "An alias is a short name, such as work, used with ssh work. Leave optional fields blank to use your SSH settings and defaults.".into() };
         hosts.select();
         Ok(hosts)
     }
@@ -165,7 +165,7 @@ impl Hosts {
                     .context("No host selected. Press A to add an alias.")?;
                 let entry = &self.config.entries[index];
                 if entry.read_only {
-                    anyhow::bail!("Shared patterns or repeated settings cannot be edited here. Edit this block directly in ~/.ssh/config.");
+                    anyhow::bail!("This entry matches multiple hosts or has repeated settings. Edit it directly in ~/.ssh/config.");
                 }
                 if matches!(event.code, KeyCode::Char('d' | 'D')) {
                     self.deleting = true;
@@ -236,7 +236,7 @@ impl Hosts {
                 ],
             )
             .header(
-                Row::new(["Alias", "Hostname", "User", "Port"])
+                Row::new(["Alias", "Hostname or IP", "Username", "Port"])
                     .style(Style::default().add_modifier(Modifier::BOLD)),
             )
             .row_highlight_style(
@@ -291,8 +291,8 @@ impl Hosts {
                 let mut lines = Vec::new();
                 for (i, label) in [
                     "Alias",
-                    "Hostname",
-                    "User (optional)",
+                    "Hostname or IP",
+                    "Username (optional)",
                     "Port (optional)",
                     "Key file (optional)",
                 ]
@@ -307,7 +307,7 @@ impl Hosts {
                 }
                 lines.push("\nTab/Up/Down: field | Ctrl+U: clear field".into());
                 lines.push("Enter: save | Esc: cancel".into());
-                lines.push("Blank optional fields inherit your SSH settings.".into());
+                lines.push("Leave blank to use your SSH settings and defaults.".into());
                 lines.push(format!("\n{}", self.message));
                 (
                     if form.index.is_some() {

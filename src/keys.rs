@@ -176,7 +176,7 @@ pub fn generate(dir: &Path, name: &str, rsa: bool) -> Result<Key> {
     }
     // Generate in a private staging directory so ssh-keygen can never overwrite an existing key.
     let stage = dir.join(format!(".skm-key-{}", std::process::id()));
-    fs::DirBuilder::new().mode(0o700).create(&stage).context("Could not create the key staging directory. Remove a stale .skm-key directory after checking its contents, then try again.")?;
+    fs::DirBuilder::new().mode(0o700).create(&stage).with_context(|| format!("Could not create a temporary folder for the new key: {}. Check ~/.ssh permissions. If this folder already exists, check its contents before moving it aside.", stage.display()))?;
     let result = (|| {
         let staged = stage.join("key");
         let mut command = process::command("ssh-keygen")?;
@@ -185,13 +185,13 @@ pub fn generate(dir: &Path, name: &str, rsa: bool) -> Result<Key> {
             command.args(["-b", "4096"]);
         }
         command.arg("-f").arg(&staged).args(["-C", name]);
-        process::interactive(&mut command, "generate the SSH key")?;
+        process::interactive(&mut command, "create the SSH key")?;
         fs::set_permissions(&staged, fs::Permissions::from_mode(0o600))?;
         let key = inventory(&stage)?
             .keys
             .into_iter()
             .find(|k| k.private)
-            .context("Generated key could not be read. Check ssh-keygen output and try again.")?;
+            .context("The new key could not be read. Check ssh-keygen output and try again.")?;
         fs::hard_link(&staged, &path).with_context(|| {
             format!(
                 "Could not save {}. Choose an unused filename and check directory permissions.",
@@ -241,12 +241,12 @@ pub fn deploy(key: &Key, remote: &str, port: u16) -> Result<()> {
         )
     })?;
     if text.trim().lines().count() != 1 {
-        bail!("Public key file {} must contain exactly one key. Restore the matching single-line .pub file before registering it.", public.display());
+        bail!("Public key file {} must contain exactly one key. Restore the matching single-line .pub file before adding it to a server.", public.display());
     }
     let parsed = PublicKey::from_openssh(text.trim())
         .context("Could not parse the public key. Restore the matching .pub file and try again.")?;
     if parsed.fingerprint(HashAlg::Sha256).to_string() != key.fingerprint {
-        bail!("The public key does not match {}. Restore its matching .pub file before registering it.", key.path.display());
+        bail!("The public key does not match {}. Restore its matching .pub file before adding it to a server.", key.path.display());
     }
     // ssh-copy-id evaluates its identity filename as shell text on some OpenSSH versions.
     if public
@@ -262,7 +262,7 @@ pub fn deploy(key: &Key, remote: &str, port: u16) -> Result<()> {
         .arg("-i")
         .arg(public)
         .args(["-p", &port.to_string(), remote]);
-    process::interactive(&mut command, "register the public key on the server")
+    process::interactive(&mut command, "add the public key to the server")
 }
 
 pub fn require_terminal() -> Result<()> {

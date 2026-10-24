@@ -71,7 +71,7 @@ impl App {
     fn new(dir: &Path) -> Result<Self> {
         let mut app = Self {
             dir: dir.to_path_buf(),
-            message: "Choose a key with Up/Down. Press G to create one.".into(),
+            message: "The SSH agent holds unlocked keys for SSH. Use Up/Down to select a key, or G to create one.".into(),
             ..Self::default()
         };
         app.refresh(dir)?;
@@ -298,7 +298,7 @@ impl App {
                 return;
             }
             Work::Generate { name, rsa } => {
-                println!("OpenSSH will ask for an optional passphrase. Input is hidden.");
+                println!("OpenSSH will ask for an optional passphrase to protect the private key. Input is hidden.");
                 keys::generate(dir, &name, rsa).map(|key| {
                     self.message = format!(
                         "Created {}. Fingerprint: {}",
@@ -315,15 +315,15 @@ impl App {
                         "{}: {}",
                         key.path.display(),
                         if loaded {
-                            "Loaded in Agent"
+                            "Loaded in agent"
                         } else {
-                            "Already Loaded"
+                            "Already loaded"
                         }
                     );
                 }),
             Work::Doctor => agent::ensure(dir).map(|agent| {
                 self.message = format!(
-                    "Agent ready: {}. Stable link: {}",
+                    "SSH agent ready. Connection: {}. Shell connection: {}",
                     agent.socket.display(),
                     dir.join("agent.sock").display()
                 )
@@ -337,12 +337,12 @@ impl App {
                 let loaded = agent::ensure(dir).and_then(|mut agent| agent::load(&mut agent, &key));
                 let mut messages = vec![format!("Key saved: {}", key.path.display())];
                 match registration {
-                    Ok(Some(())) => messages.push("Public key registered on the server.".into()),
+                    Ok(Some(())) => messages.push("Public key added to the server.".into()),
                     Ok(None) => {},
                     Err(e) => messages.push(format!("Remote setup failed: {e:#}. Retry with ssh-copy-id -i <key>.pub user@hostname.")),
                 }
                 match loaded {
-                    Ok(_) => messages.push("Loaded in Agent.".into()),
+                    Ok(_) => messages.push("Loaded in agent.".into()),
                     Err(e) => messages.push(format!(
                         "Agent loading failed: {e:#}. Retry with skm load <filename>."
                     )),
@@ -400,7 +400,7 @@ impl App {
             .split(areas[1]);
         if self.keys.is_empty() {
             frame.render_widget(
-                Paragraph::new("No keys found.\nPress G to generate a key.")
+                Paragraph::new("No keys found.\nPress G to create a key.")
                     .wrap(Wrap { trim: false })
                     .block(Block::default().title(" Keys ").borders(Borders::ALL)),
                 sections[0],
@@ -415,11 +415,11 @@ impl App {
                     "{}\n{}",
                     key.path.file_name().unwrap_or_default().to_string_lossy(),
                     if loaded {
-                        "Loaded in Agent"
+                        "Loaded in agent"
                     } else if !key.private {
-                        "Public Key Only"
+                        "Public key only"
                     } else {
-                        "Not Loaded"
+                        "Not loaded"
                     }
                 ))])
                 .height(2)
@@ -445,13 +445,13 @@ impl App {
             .and_then(|i| self.keys.get(i))
             .map(|key| {
                 format!(
-                    "File: {}\nAlgorithm: {}\nFingerprint: {}",
+                    "File: {}\nKey type: {}\nFingerprint: {}",
                     key.path.display(),
                     key.algorithm,
                     key.fingerprint
                 )
             })
-            .unwrap_or_else(|| "Select a key to see its algorithm and fingerprint.".into());
+            .unwrap_or_else(|| "Select a key to see its key type and fingerprint.".into());
         frame.render_widget(
             Paragraph::new(details).wrap(Wrap { trim: false }).block(
                 Block::default()
@@ -468,7 +468,7 @@ impl App {
         );
         frame.render_widget(
             Paragraph::new(
-                "Enter: load selected key\n[G]enerate & Setup [L]oad Key [D]octor [H]osts [Q]uit",
+                "Enter: load selected key into agent\n[G] Create key [L] Load key [D] Check agent [Q] Quit",
             ),
             areas[3],
         );
@@ -481,9 +481,9 @@ impl App {
             );
             frame.render_widget(Clear, popup);
             let (title, text) = match wizard {
-                Wizard::Parameters(form) => (" Generate key: step 1 of 3 ", format!("{} Algorithm: {}\n\n{} Filename: {}\n\nOpenSSH will ask for an optional passphrase next.\n\nTab: choose field | Left/Right/Space: change algorithm\nEnter: generate key | Esc: cancel\n\n{}", if form.field == 0 { ">" } else { " " }, if form.rsa { "RSA 4096" } else { "Ed25519" }, if form.field == 1 { ">" } else { " " }, form.filename, self.message)),
-                Wizard::Register(_) => (" Register key: step 2 of 3 ", format!("Would you like to register this new key to a remote server now? [y/N]\n\nY: enter server details\nN / Enter / Esc: skip registration and load the key\n\n{}", self.message)),
-                Wizard::Server { remote, port, field, .. } => (" Server setup: step 2 of 3 ", format!("{} Server (user@hostname): {}\n\n{} SSH port: {}\n\nTab: choose field | Enter: register and load the key\nEsc: back\n\nOpenSSH will ask you to verify the host and sign in.\n\n{}", if *field == 0 { ">" } else { " " }, remote, if *field == 1 { ">" } else { " " }, port, self.message)),
+                Wizard::Parameters(form) => (" Create key: step 1 of 3 ", format!("{} Key type: {}\n\n{} Filename: {}\n\nA passphrase protects your private key. OpenSSH will ask for one next.\n\nTab: choose field | Left/Right/Space: change key type\nEnter: create key | Esc: cancel\n\n{}", if form.field == 0 { ">" } else { " " }, if form.rsa { "RSA 4096" } else { "Ed25519" }, if form.field == 1 { ">" } else { " " }, form.filename, self.message)),
+                Wizard::Register(_) => (" Add public key: step 2 of 3 ", format!("Add this public key to a server now? [y/N]\n\nY: enter server details\nN / Enter / Esc: skip server setup and load into agent\n\n{}", self.message)),
+                Wizard::Server { remote, port, field, .. } => (" Server setup: step 2 of 3 ", format!("{} Server (user@hostname): {}\n\n{} SSH port: {}\n\nTab: choose field | Enter: add public key and load into agent\nEsc: back\n\nOpenSSH will ask you to verify the host and sign in.\n\n{}", if *field == 0 { ">" } else { " " }, remote, if *field == 1 { ">" } else { " " }, port, self.message)),
             };
             frame.render_widget(
                 Paragraph::new(text).wrap(Wrap { trim: false }).block(
@@ -657,7 +657,7 @@ mod tests {
                 "Keys in ~/.ssh/",
                 "Key details",
                 "Status",
-                "Enter: load selected key",
+                "Enter: load selected key into agent",
                 "Fingerprint:",
             ] {
                 assert!(screen.contains(label), "Missing {label}");

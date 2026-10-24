@@ -26,13 +26,13 @@ pub struct Agent {
 pub fn probe(socket: &Path) -> Result<Agent> {
     let meta = fs::metadata(socket).with_context(|| {
         format!(
-            "Could not inspect agent socket: {}. Run skm doctor to find a working agent.",
+            "Could not check the SSH agent connection at {}. Run skm doctor to find or start an agent.",
             socket.display()
         )
     })?;
     if !meta.file_type().is_socket() || meta.uid() != unsafe { libc::geteuid() } {
         bail!(
-            "Agent socket {} is not a socket owned by you. Run skm doctor to select a safe socket.",
+            "Could not use the SSH agent connection at {}: it is not a socket owned by you. Run skm doctor to choose a safe agent.",
             socket.display()
         );
     }
@@ -73,10 +73,10 @@ pub fn ensure(dir: &Path) -> Result<Agent> {
     keys::ensure_dir(dir)?;
     let lock = OpenOptions::new().read(true).write(true).create(true).truncate(false)
         .mode(0o600).custom_flags(libc::O_NOFOLLOW).open(dir.join(".skm-agent.lock"))
-        .context("Could not open the agent lock file. Check ~/.ssh/.skm-agent.lock ownership and permissions.")?;
+        .context("Could not prepare to manage the SSH agent. Check ownership and permissions for ~/.ssh/.skm-agent.lock.")?;
     let meta = lock.metadata()?;
     if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
-        bail!("Agent lock file has unsafe ownership or permissions. Check ~/.ssh/.skm-agent.lock and set its permissions to 600.");
+        bail!("Could not manage the SSH agent safely. Make sure ~/.ssh/.skm-agent.lock is owned by you and has permissions 600.");
     }
     let start = Instant::now();
     while unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
@@ -127,7 +127,7 @@ pub fn ensure(dir: &Path) -> Result<Agent> {
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let socket = stdout.lines().find_map(|line| line.strip_prefix("SSH_AUTH_SOCK=").and_then(|s| s.split(';').next()))
-        .context("ssh-agent did not report its socket. Check your OpenSSH installation and run skm doctor again.")?;
+        .context("Could not find the connection address for the new SSH agent. Check your OpenSSH installation and run skm doctor again.")?;
     let agent = probe(Path::new(socket))?;
     update_link(&stable, &agent.socket)?;
     Ok(agent)
@@ -144,10 +144,10 @@ fn check_link_slot(stable: &Path) -> Result<()> {
 
 fn update_link(stable: &Path, socket: &Path) -> Result<()> {
     let target = fs::canonicalize(socket)
-        .context("Could not resolve the agent socket. Run skm doctor again.")?;
+        .context("Could not find the SSH agent connection. Run skm doctor again.")?;
     check_link_slot(stable)?;
     let temporary = stable.with_file_name(format!(".skm-agent-link-{}", std::process::id()));
-    symlink(&target, &temporary).context("Could not create the agent socket link. Check ~/.ssh permissions and remove any stale .skm-agent-link file.")?;
+    symlink(&target, &temporary).with_context(|| format!("Could not set up the SSH agent connection. Check ~/.ssh permissions. If {} already exists, remove that temporary link and try again.", temporary.display()))?;
     let result = fs::rename(&temporary, stable)
         .context("Could not update ~/.ssh/agent.sock. Check directory permissions.");
     if result.is_err() {
