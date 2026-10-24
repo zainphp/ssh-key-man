@@ -36,7 +36,7 @@ fn dispatch(cli: cli::Cli) -> Result<()> {
         Some(cli::Commands::Gen) => generate_wizard(&dir),
         Some(cli::Commands::Hosts) => {
             keys::require_terminal()?;
-            tui::run_hosts(&dir)
+            tui::run(&dir)
         }
         Some(cli::Commands::Load { filename }) => {
             let inventory = keys::inventory(&dir)?;

@@ -190,11 +190,11 @@ def main():
             try:
                 hosts.expect("Hosts in ~/.ssh/config")
                 hosts.send("K")
-                hosts.expect("[G] Create key")
+                hosts.expect("[N] New key")
                 hosts.send("H")
                 hosts.expect("Hosts in ~/.ssh/config")
-                hosts.send("\x1b[C")
-                hosts.expect("Left/Right: pick action")
+                hosts.send("\x1b[B\x1b[B")
+                hosts.expect("Enter: run action")
                 hosts.send("\r")
                 hosts.expect("Add SSH host")
                 hosts.send("office\x1b[Bserver.example.invalid\x1b[Balice\x1b[B2222\x1b[B~/.ssh/id_cli\r")
@@ -253,23 +253,22 @@ def main():
                 hosts.close()
             tui = Session(binary, [], env, tui=True)
             try:
+                tui.expect("Hosts in ~/.ssh/config")
+                tui.send("\t")
+                tui.send("\x1b[D")
                 tui.expect("Enter: load key and close skm")
                 tui.expect("Key details")
                 assert " Status " not in tui.screen()
-                tui.send("\t")
-                tui.send("\x1b[D")
-                tui.expect("Left/Right: pick page")
+                assert "Esc: quit" not in tui.screen()
                 tui.send("\x1b[C")
                 tui.expect("Hosts in ~/.ssh/config")
-                tui.send("\r")
-                tui.expect("Enter: connect and close skm")
-                tui.send("\x1b[C\r")
+                tui.send("n")
                 tui.expect("Add SSH host")
                 tui.send("\x1b")
                 tui.expect("Add SSH host", visible=False)
                 tui.send("K")
-                tui.expect("[G] Create key")
-                tui.send("g")
+                tui.expect("[N] New key")
+                tui.send("n")
                 tui.expect("Create key: step 1 of 3")
                 tui.send("\x1b[C\x1b[B" + "\x7f" * len("id_rsa") + "id_tui\r")
                 tui.expect("Enter passphrase")
@@ -288,8 +287,21 @@ def main():
                 tui.expect("Loaded in agent")
                 tui.send("\r")
                 tui.expect("Message", visible=False)
-                tui.send("\x1b[C\x1b[C\x1b[C\r")
-                tui.expect("SSH agent ready.")
+                fingerprint = subprocess.check_output(["ssh-keygen", "-lf", str(home / ".ssh/id_tui")], text=True)
+                assert fingerprint.startswith("4096 ") and "(RSA)" in fingerprint, fingerprint
+                tui.send("\x1b[B\x1b[Bd")
+                tui.expect("Delete key")
+                tui.send("\r")
+                tui.expect("Delete key", visible=False)
+                assert (home / ".ssh/id_tui").exists(), "Default confirmation deleted a key"
+                tui.send("\x1b[B\x1b[C\r")
+                tui.expect("Delete key")
+                tui.send("\x1b[B\r")
+                tui.expect("Deleted local key files")
+                assert not (home / ".ssh/id_tui").exists()
+                assert not (home / ".ssh/id_tui.pub").exists()
+                identities = subprocess.check_output(["ssh-add", "-l"], env=env, text=True)
+                assert fingerprint.split()[1] not in identities, "Deleted key remains loaded in the agent"
                 tui.send("\r")
                 tui.expect("Message", visible=False)
                 tui.send("\x1b")
@@ -300,6 +312,8 @@ def main():
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(home / ".ssh/id_00_unloaded")], check=True)
             load = Session(binary, [], env, tui=True)
             try:
+                load.expect("Hosts in ~/.ssh/config")
+                load.send("K")
                 load.expect("Enter: load key and close skm")
                 load.send("\r")
                 load.expect("Loaded in agent")
@@ -313,6 +327,8 @@ def main():
             (home / ".ssh/id_00_unloaded").chmod(0o644)
             failed_load = Session(binary, [], env, tui=True)
             try:
+                failed_load.expect("Hosts in ~/.ssh/config")
+                failed_load.send("K")
                 failed_load.expect("Enter: load key and close skm")
                 failed_load.send("\r")
                 failed_load.expect("permissions 600")
@@ -322,14 +338,12 @@ def main():
                 failed_load.close()
                 (home / ".ssh/id_00_unloaded").chmod(0o600)
             assert (home / ".ssh/id_cli").stat().st_mode & 0o777 == 0o600
-            fingerprint = subprocess.check_output(["ssh-keygen", "-lf", str(home / ".ssh/id_tui")], text=True)
-            assert fingerprint.startswith("4096 ") and "(RSA)" in fingerprint, fingerprint
             assert not list((home / ".ssh").glob(".skm-key-*")), "Staging directory was not removed"
             assert (home / ".ssh/agent.sock").resolve() == socket.resolve()
         finally:
             agent.terminate()
             agent.wait(timeout=5)
-    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, doctor, and terminal restoration")
+    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, confirmed key deletion, agent unloading, and terminal restoration")
 
 
 if __name__ == "__main__":

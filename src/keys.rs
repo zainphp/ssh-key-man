@@ -2,9 +2,9 @@ use crate::process;
 use anyhow::{bail, Context, Result};
 use ssh_key::{HashAlg, PrivateKey, PublicKey};
 use std::{
-    fs,
-    io::{self, IsTerminal, Write},
-    os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
+    fs::{self, OpenOptions},
+    io::{self, IsTerminal, Read, Write},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
@@ -164,6 +164,82 @@ pub fn public_path(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(".pub");
     name.into()
+}
+
+pub fn delete(dir: &Path, key: &Key) -> Result<()> {
+    ensure_dir(dir)?;
+    if key.path.parent() != Some(dir) {
+        bail!(
+            "Could not delete a key outside {}. Select a key from this folder.",
+            dir.display()
+        );
+    }
+    let text = read_owned_key(&key.path)?;
+    let public = if key.private {
+        PrivateKey::from_openssh(&text).context("Could not read the private key. The file was kept; check its format before deleting it.")?.public_key().clone()
+    } else {
+        if text.trim().lines().count() != 1 {
+            bail!("Public key file {} contains more than one line. The file was kept; check its contents before deleting it manually.", key.path.display());
+        }
+        PublicKey::from_openssh(text.trim()).context("Could not read the public key. The file was kept; check its format before deleting it.")?
+    };
+    if public.fingerprint(HashAlg::Sha256).to_string() != key.fingerprint {
+        bail!(
+            "Key file {} changed since it was selected. Reopen the Keys page before deleting it.",
+            key.path.display()
+        );
+    }
+    let companion = public_path(&key.path);
+    let has_companion = key.private
+        && match fs::symlink_metadata(&companion) {
+            Ok(_) => {
+                let text = read_owned_key(&companion)?;
+                if text.trim().lines().count() != 1
+                    || PublicKey::from_openssh(text.trim())
+                        .map(|p| p.fingerprint(HashAlg::Sha256).to_string())
+                        .ok()
+                        .as_deref()
+                        != Some(&key.fingerprint)
+                {
+                    bail!("Public key {} does not match the selected private key. Both files were kept. Check the .pub file before deleting this pair.", companion.display());
+                }
+                true
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!(
+                        "Could not inspect {}. The key files were kept; check file permissions.",
+                        companion.display()
+                    )
+                })
+            }
+        };
+    if key.private {
+        crate::agent::unload(dir, &public)?;
+    }
+    fs::remove_file(&key.path).with_context(|| format!("Could not delete {}. Check folder permissions. If the key was unloaded, load it again with skm load <filename> if needed.", key.path.display()))?;
+    if has_companion {
+        fs::remove_file(&companion).with_context(|| format!("The private key was deleted, but {} could not be removed. Check folder permissions and remove this public key file manually.", companion.display()))?;
+    }
+    Ok(())
+}
+
+fn read_owned_key(path: &Path) -> Result<String> {
+    let mut file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)
+        .with_context(|| format!("Could not read {}. The file was kept. Check permissions; linked files must be deleted manually.", path.display()))?;
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.len() > 1_048_576 {
+        bail!("Could not delete {} safely. Select a regular key file owned by you and smaller than 1 MiB.", path.display());
+    }
+    let mut text = String::new();
+    file.read_to_string(&mut text).with_context(|| {
+        format!(
+            "Could not read {}. The file was kept; check its format and permissions.",
+            path.display()
+        )
+    })?;
+    Ok(text)
 }
 
 pub fn generate(dir: &Path, name: &str, rsa: bool) -> Result<Key> {

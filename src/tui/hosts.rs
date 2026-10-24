@@ -31,7 +31,7 @@ impl Hosts {
             .table
             .selected()
             .and_then(|i| self.config.entries.get(i))
-            .context("No host selected. Press A to add an alias first.")?;
+            .context("No host selected. Press N to add an alias first.")?;
         crate::hosts::validate_alias(&entry.host.alias)?;
         Ok(entry.host.alias.clone())
     }
@@ -116,6 +116,7 @@ impl Hosts {
                     form.values[form.field].push(c)
                 }
                 KeyCode::Enter => {
+                    let saved_index = form.index.unwrap_or(0);
                     let [alias, hostname, user, port, identity_file] = form.values.clone();
                     let host = Host {
                         alias,
@@ -130,6 +131,7 @@ impl Hosts {
                         backup,
                         format!("Saved {}. Connect with ssh {}.", host.alias, host.alias),
                     )?;
+                    self.table.select(Some(saved_index));
                 }
                 _ => {}
             }
@@ -164,7 +166,7 @@ impl Hosts {
             KeyCode::Up => {
                 self.move_selection(false);
             }
-            KeyCode::Char('a' | 'A') => {
+            KeyCode::Char('n' | 'N' | 'a' | 'A') => {
                 self.form = Some(Form {
                     index: None,
                     values: Default::default(),
@@ -176,7 +178,7 @@ impl Hosts {
                 let index = self
                     .table
                     .selected()
-                    .context("No host selected. Press A to add an alias.")?;
+                    .context("No host selected. Press N to add an alias.")?;
                 let entry = &self.config.entries[index];
                 if entry.read_only {
                     anyhow::bail!("This entry matches multiple hosts or has repeated settings. Edit it directly in ~/.ssh/config.");
@@ -215,7 +217,7 @@ impl Hosts {
             Constraint::Length(3),
             Constraint::Min(3),
             Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(2),
         ])
         .split(area);
         frame.render_widget(
@@ -223,9 +225,9 @@ impl Hosts {
                 .block(Block::default().borders(Borders::BOTTOM)),
             parts[0],
         );
-        super::draw_tabs(frame, parts[0], 1, focus);
+        super::draw_tabs(frame, parts[0], 0, focus);
         if self.config.entries.is_empty() {
-            frame.render_widget(Paragraph::new("No host aliases found. Press A to add one.\nSave a hostname, user, port, and key so you can connect with ssh <alias>.").wrap(Wrap { trim: false }), parts[1]);
+            frame.render_widget(Paragraph::new("No host aliases found. Press N to add one.\nSave a hostname, user, port, and key so you can connect with ssh <alias>.").wrap(Wrap { trim: false }), parts[1]);
         } else {
             let rows = self.config.entries.iter().map(|entry| {
                 let host = &entry.host;
@@ -343,10 +345,32 @@ mod tests {
     }
 
     #[test]
+    fn new_host_is_selected_even_when_created_from_the_last_row() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config"),
+            "Host first\n HostName first.invalid\nHost second\n HostName second.invalid\n",
+        )
+        .unwrap();
+        let mut view = Hosts::new(dir.path()).unwrap();
+        view.move_selection(true);
+        view.input(dir.path(), press(KeyCode::Char('n'))).unwrap();
+        view.form.as_mut().unwrap().values = [
+            "new-host".into(),
+            "new.invalid".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
+        view.input(dir.path(), press(KeyCode::Enter)).unwrap();
+        assert_eq!(view.connection_alias().unwrap(), "new-host");
+    }
+
+    #[test]
     fn form_creates_edits_and_confirms_deletion() {
         let dir = tempfile::tempdir().unwrap();
         let mut view = Hosts::new(dir.path()).unwrap();
-        view.input(dir.path(), press(KeyCode::Char('a'))).unwrap();
+        view.input(dir.path(), press(KeyCode::Char('n'))).unwrap();
         assert!(view.input(dir.path(), press(KeyCode::Enter)).is_err());
         let form = view.form.as_mut().unwrap();
         form.values = [
@@ -390,7 +414,7 @@ mod tests {
         for (width, height) in [(1, 1), (40, 8), (60, 18), (110, 30)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal.draw(|f| view.draw(f, Focus::List, 0)).unwrap();
-            view.input(dir.path(), press(KeyCode::Char('a'))).unwrap();
+            view.input(dir.path(), press(KeyCode::Char('n'))).unwrap();
             terminal.draw(|f| view.draw(f, Focus::List, 0)).unwrap();
             view.input(dir.path(), press(KeyCode::Esc)).unwrap();
         }

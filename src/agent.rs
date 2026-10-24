@@ -17,6 +17,40 @@ use std::{
 };
 use walkdir::WalkDir;
 
+pub fn unload(dir: &Path, public: &ssh_key::PublicKey) -> Result<()> {
+    use std::io::Write;
+    let Some(agent) = current(dir) else {
+        return Ok(());
+    };
+    let fingerprint = public.fingerprint(ssh_key::HashAlg::Sha256).to_string();
+    if !agent.fingerprints.contains(&fingerprint) {
+        return Ok(());
+    }
+    let mut file = tempfile::Builder::new()
+        .prefix(".skm-public-")
+        .suffix(".pub")
+        .tempfile_in(dir)
+        .context(
+            "Could not prepare to unload the key. Check ~/.ssh permissions and free disk space.",
+        )?;
+    let mut identity = public.clone();
+    identity.set_comment("");
+    file.write_all(identity.to_openssh()?.as_bytes())?;
+    let output = process::capture(
+        process::command("ssh-add")?
+            .env("SSH_AUTH_SOCK", &agent.socket)
+            .arg("-d")
+            .arg(file.path()),
+    )?;
+    if !output.status.success() {
+        bail!("Could not unload the key from the SSH agent: {}. The key files were kept. Run ssh-add -d <keyfile> and try again.", String::from_utf8_lossy(&output.stderr).trim());
+    }
+    if probe(&agent.socket)?.fingerprints.contains(&fingerprint) {
+        bail!("The key is still loaded in the SSH agent. The key files were kept. Run ssh-add -d <keyfile> before deleting them.");
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct Agent {
     pub socket: PathBuf,

@@ -296,3 +296,85 @@ fn deployment_rejects_multiple_public_keys_in_one_file() {
     let error = keys::deploy(&key, "user@example.invalid", 22).unwrap_err();
     assert!(error.to_string().contains("exactly one key"));
 }
+
+#[test]
+fn deletes_only_the_selected_key_pair_including_encrypted_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    generate(dir.path(), "id_delete", "ed25519", "test-only-passphrase");
+    generate(dir.path(), "id_keep", "ed25519", "");
+    let key = keys::inventory(dir.path())
+        .unwrap()
+        .keys
+        .into_iter()
+        .find(|k| k.path.ends_with("id_delete"))
+        .unwrap();
+    keys::delete(dir.path(), &key).unwrap();
+    assert!(!key.path.exists());
+    assert!(!keys::public_path(&key.path).exists());
+    assert!(dir.path().join("id_keep").exists());
+    assert!(dir.path().join("id_keep.pub").exists());
+}
+
+#[test]
+fn deletion_preserves_files_when_the_public_key_does_not_match_or_is_linked() {
+    let dir = tempfile::tempdir().unwrap();
+    generate(dir.path(), "id_first", "ed25519", "");
+    generate(dir.path(), "id_other", "ed25519", "");
+    let key = keys::inventory(dir.path())
+        .unwrap()
+        .keys
+        .into_iter()
+        .find(|k| k.path.ends_with("id_first"))
+        .unwrap();
+    let public = keys::public_path(&key.path);
+    fs::copy(dir.path().join("id_other.pub"), &public).unwrap();
+    assert!(keys::delete(dir.path(), &key).is_err());
+    assert!(key.path.exists() && public.exists());
+    fs::remove_file(&public).unwrap();
+    symlink(dir.path().join("id_other.pub"), &public).unwrap();
+    assert!(keys::delete(dir.path(), &key).is_err());
+    assert!(key.path.exists() && public.exists());
+    assert!(dir.path().join("id_other.pub").exists());
+}
+
+#[test]
+fn deletion_refuses_a_changed_private_key_or_an_outside_path() {
+    let dir = tempfile::tempdir().unwrap();
+    generate(dir.path(), "id_first", "ed25519", "");
+    generate(dir.path(), "id_other", "ed25519", "");
+    let key = keys::inventory(dir.path())
+        .unwrap()
+        .keys
+        .into_iter()
+        .find(|k| k.path.ends_with("id_first"))
+        .unwrap();
+    fs::copy(dir.path().join("id_other"), &key.path).unwrap();
+    assert!(keys::delete(dir.path(), &key).is_err());
+    assert!(key.path.exists());
+    let other = tempfile::tempdir().unwrap();
+    assert!(keys::delete(other.path(), &key).is_err());
+    assert!(key.path.exists());
+}
+
+#[test]
+fn deletion_supports_missing_public_companions_and_public_only_files() {
+    let dir = tempfile::tempdir().unwrap();
+    generate(dir.path(), "id_private", "ed25519", "");
+    generate(dir.path(), "id_public", "ed25519", "");
+    fs::remove_file(dir.path().join("id_private.pub")).unwrap();
+    fs::remove_file(dir.path().join("id_public")).unwrap();
+    let inventory = keys::inventory(dir.path()).unwrap();
+    assert_eq!(inventory.keys.len(), 2);
+    for key in inventory.keys {
+        if !key.private {
+            let original = fs::read_to_string(&key.path).unwrap();
+            fs::write(&key.path, format!("{original}{original}")).unwrap();
+            assert!(keys::delete(dir.path(), &key).is_err());
+            assert!(key.path.exists());
+            fs::write(&key.path, original).unwrap();
+        }
+        keys::delete(dir.path(), &key).unwrap();
+    }
+    assert!(!dir.path().join("id_private").exists());
+    assert!(!dir.path().join("id_public.pub").exists());
+}

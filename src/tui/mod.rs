@@ -33,6 +33,10 @@ struct Form {
 enum Wizard {
     Parameters(Form),
     Register(Key),
+    Delete {
+        key: Key,
+        confirm: bool,
+    },
     Server {
         key: Key,
         remote: String,
@@ -51,7 +55,7 @@ enum Work {
         remote: Option<(String, u16)>,
     },
     Load(Key),
-    Doctor,
+    Delete(Key),
     Connect(String),
 }
 
@@ -80,12 +84,12 @@ struct App {
 
 impl App {
     fn new(dir: &Path) -> Result<Self> {
-        let mut app = Self {
+        Ok(Self {
             dir: dir.to_path_buf(),
+            hosts: Some(hosts::Hosts::new(dir)?),
+            hosts_active: true,
             ..Self::default()
-        };
-        app.refresh(dir)?;
-        Ok(app)
+        })
     }
 
     fn refresh(&mut self, dir: &Path) -> Result<()> {
@@ -143,8 +147,13 @@ impl App {
                 KeyCode::Tab | KeyCode::BackTab => return Ok((true, None)),
                 _ => {}
             }
+            let actions: &[char] = if self.hosts_active {
+                &['n', 'e', 'd']
+            } else {
+                &['n', 'd']
+            };
             match (self.focus, event.code) {
-                (Focus::Pages, KeyCode::Left | KeyCode::Right) => {
+                (Focus::Pages | Focus::List, KeyCode::Left | KeyCode::Right) => {
                     if self.hosts_active {
                         self.hosts_active = false;
                         self.refresh(&self.dir.clone())?;
@@ -156,14 +165,6 @@ impl App {
                 }
                 (Focus::Pages, KeyCode::Enter | KeyCode::Down) => {
                     self.focus = Focus::List;
-                    return Ok((true, None));
-                }
-                (Focus::List, KeyCode::Left) => {
-                    self.focus = Focus::Pages;
-                    return Ok((true, None));
-                }
-                (Focus::List, KeyCode::Right) => {
-                    self.focus = Focus::Actions;
                     return Ok((true, None));
                 }
                 (Focus::List, KeyCode::Up | KeyCode::Down) => {
@@ -182,8 +183,13 @@ impl App {
                     return Ok((true, None));
                 }
                 (Focus::Actions, KeyCode::Left | KeyCode::Right) => {
-                    self.action =
-                        (self.action + if event.code == KeyCode::Right { 1 } else { 2 }) % 3;
+                    self.action = (self.action
+                        + if event.code == KeyCode::Right {
+                            1
+                        } else {
+                            actions.len() - 1
+                        })
+                        % actions.len();
                     return Ok((true, None));
                 }
                 (Focus::Actions, KeyCode::Up) => {
@@ -195,13 +201,7 @@ impl App {
                     return Ok((true, None));
                 }
                 (Focus::Actions, KeyCode::Enter) => {
-                    event.code = KeyCode::Char(
-                        if self.hosts_active {
-                            ['a', 'e', 'd']
-                        } else {
-                            ['g', 'l', 'd']
-                        }[self.action],
-                    );
+                    event.code = KeyCode::Char(actions[self.action]);
                 }
                 (Focus::Pages, KeyCode::Up) => {
                     self.focus = Focus::Actions;
@@ -237,6 +237,18 @@ impl App {
         }
         if let Some(wizard) = self.wizard.as_mut() {
             match wizard {
+                Wizard::Delete { key, confirm } => match event.code {
+                    KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
+                        *confirm = !*confirm
+                    }
+                    KeyCode::Char('y' | 'Y') | KeyCode::Enter
+                        if *confirm || matches!(event.code, KeyCode::Char('y' | 'Y')) =>
+                    {
+                        return Ok((true, Some(Work::Delete(key.clone()))))
+                    }
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('n' | 'N') => self.wizard = None,
+                    _ => {}
+                },
                 Wizard::Parameters(form) => match event.code {
                     KeyCode::Esc => self.wizard = None,
                     KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => {
@@ -336,19 +348,30 @@ impl App {
             return Ok((true, None));
         }
         match event.code {
-            KeyCode::Char('g' | 'G') => {
+            KeyCode::Char('n' | 'N' | 'g' | 'G') => {
                 self.wizard = Some(Wizard::Parameters(Form {
                     filename: "id_ed25519".into(),
                     ..Form::default()
                 }));
                 self.message.clear();
             }
-            KeyCode::Char('d' | 'D') => return Ok((true, Some(Work::Doctor))),
-            KeyCode::Char('l' | 'L') | KeyCode::Enter => {
+            KeyCode::Char('d' | 'D') => {
+                let key = self
+                    .table
+                    .selected()
+                    .and_then(|i| self.keys.get(i))
+                    .context("No key selected. Select a key before deleting it.")?;
+                self.wizard = Some(Wizard::Delete {
+                    key: key.clone(),
+                    confirm: false,
+                });
+                self.message.clear();
+            }
+            KeyCode::Enter => {
                 if let Some(key) = self.table.selected().and_then(|i| self.keys.get(i)) {
                     return Ok((true, Some(Work::Load(key.clone()))));
                 }
-                self.message = "No key selected. Press G to create a key.".into();
+                self.message = "No key selected. Press N to create a key.".into();
             }
             KeyCode::Char('j') => {
                 move_selection(&mut self.table, self.keys.len(), true);
@@ -405,13 +428,12 @@ impl App {
                 );
                 return Ok(false);
             }
-            Work::Doctor => agent::ensure(dir).map(|agent| {
-                self.message = format!(
-                    "SSH agent ready. Connection: {}. Shell connection: {}",
-                    agent.socket.display(),
-                    dir.join("agent.sock").display()
-                )
-            }),
+            Work::Delete(key) => {
+                self.wizard = None;
+                keys::delete(dir, &key).map(|()| {
+                    self.message = format!("Deleted local key files for {}.", key.path.display())
+                })
+            }
             Work::Finish { key, remote } => {
                 let registration = remote
                     .as_ref()
@@ -467,7 +489,7 @@ impl App {
         let areas = Layout::vertical([
             Constraint::Length(3),
             Constraint::Min(4),
-            Constraint::Length(3),
+            Constraint::Length(2),
         ])
         .split(area);
         let status = if let Some(agent) = &self.agent {
@@ -476,18 +498,18 @@ impl App {
                 agent.fingerprints.len()
             )
         } else {
-            "ssh-key-man | Agent unavailable | Press D to find or start one".into()
+            "ssh-key-man | No active agent connection".into()
         };
         frame.render_widget(
             Paragraph::new(status).block(Block::default().borders(Borders::BOTTOM)),
             areas[0],
         );
-        draw_tabs(frame, areas[0], 0, self.focus);
+        draw_tabs(frame, areas[0], 1, self.focus);
         let sections = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(areas[1]);
         if self.keys.is_empty() {
             frame.render_widget(
-                Paragraph::new("No keys found.\nPress G to create a key.")
+                Paragraph::new("No keys found.\nPress N to create a key.")
                     .wrap(Wrap { trim: false })
                     .block(Block::default().title(" Keys ").borders(Borders::ALL)),
                 sections[0],
@@ -547,14 +569,25 @@ impl App {
             draw_notice(frame, &self.message);
         }
         if let Some(wizard) = &self.wizard {
+            let height = if matches!(wizard, Wizard::Delete { .. }) {
+                20
+            } else {
+                16
+            };
             let popup = Rect::new(
                 area.x + (area.width.saturating_sub(76)) / 2,
-                area.y + (area.height.saturating_sub(16)) / 2,
+                area.y + (area.height.saturating_sub(height)) / 2,
                 area.width.min(76),
-                area.height.min(16),
+                area.height.min(height),
             );
             frame.render_widget(Clear, popup);
             let (title, text) = match wizard {
+                Wizard::Delete { key, confirm } => {
+                    let files = if key.private {
+                        format!("Private key: {}\nPublic key: {} (if present)\n\nAlso unloads the key from the current agent, if available.", key.path.display(), keys::public_path(&key.path).display())
+                    } else { format!("Public key: {}", key.path.display()) };
+                    (" Delete key ", format!("{files}\n\nThis cannot be undone. Keys added to servers stay there.\n\n{} Cancel\n{} Delete files\n\nEnter: confirm | Esc: cancel", if *confirm { " " } else { ">" }, if *confirm { ">" } else { " " }))
+                }
                 Wizard::Parameters(form) => (" Create key: step 1 of 3 ", format!("{} Key type: {}\n\n{} Filename: {}\n\nA passphrase protects your private key. OpenSSH will ask for one next.\n\nUp/Down: field | Left/Right/Space: key type\nEnter: create key | Esc: cancel\n\n{}", if form.field == 0 { ">" } else { " " }, if form.rsa { "RSA 4096" } else { "Ed25519" }, if form.field == 1 { ">" } else { " " }, form.filename, self.message)),
                 Wizard::Register(_) => (" Add public key: step 2 of 3 ", format!("Add this public key to a server now? [y/N]\n\n{} Add public key to server\n{} Skip server setup\n\nArrows: choose | Enter: continue\nY: add | N / Esc: skip\n\n{}", if self.register_selected { ">" } else { " " }, if self.register_selected { " " } else { ">" }, self.message)),
                 Wizard::Server { remote, port, field, .. } => (" Server setup: step 2 of 3 ", format!("{} Server (user@hostname): {}\n\n{} SSH port: {}\n\nUp/Down: field | Enter: add public key and load into agent\nEsc: back\n\nOpenSSH will ask you to verify the host and sign in.\n\n{}", if *field == 0 { ">" } else { " " }, remote, if *field == 1 { ">" } else { " " }, port, self.message)),
@@ -597,54 +630,34 @@ fn move_selection(table: &mut TableState, count: usize, down: bool) -> bool {
 
 fn draw_tabs(frame: &mut Frame, header: Rect, selected: usize, focus: Focus) {
     let row = Rect::new(header.x, header.y + 1, header.width, 1);
-    let parts = Layout::horizontal([Constraint::Length(30), Constraint::Min(0)]).split(row);
     frame.render_widget(
-        Tabs::new(["[K] Keys", "[H] Hosts"])
+        Tabs::new(["[H] Hosts", "[K] Keys"])
             .select(selected)
             .highlight_style(selection_style(focus == Focus::Pages)),
-        parts[0],
-    );
-    frame.render_widget(
-        Paragraph::new(if focus == Focus::Pages {
-            "Left/Right: pick page"
-        } else {
-            "Left: page picker"
-        }),
-        parts[1],
+        row,
     );
 }
 
 fn draw_actions(frame: &mut Frame, area: Rect, hosts: bool, focus: Focus, action: usize) {
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(area);
+    let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
     let hint = match focus {
-        Focus::Pages => "Enter/Down: open page",
-        Focus::Actions => "Left/Right: pick action | Enter: run action",
+        Focus::Pages => "Enter: open page",
+        Focus::Actions => "Enter: run action",
         Focus::List if hosts => "Enter: connect and close skm",
         Focus::List => "Enter: load key and close skm",
     };
     frame.render_widget(Paragraph::new(hint), rows[0]);
-    let labels = if hosts {
-        ["[A] Add", "[E] Edit", "[D] Delete"]
+    let labels: &[&str] = if hosts {
+        &["[N] New host", "[E] Edit", "[D] Delete"]
     } else {
-        ["[G] Create key", "[L] Load key", "[D] Check agent"]
+        &["[N] New key", "[D] Delete"]
     };
     frame.render_widget(
-        Tabs::new(labels)
+        Tabs::new(labels.iter().copied())
             .select(action)
             .highlight_style(selection_style(focus == Focus::Actions)),
         rows[1],
     );
-    let navigation = match focus {
-        Focus::List => "Up/Down: list | Left: pages | Right: actions | Esc: quit",
-        Focus::Pages => "Up: actions | Enter/Down: list | Esc: quit",
-        Focus::Actions => "Up: list | Down: pages | Esc: quit",
-    };
-    frame.render_widget(Paragraph::new(navigation), rows[2]);
 }
 
 fn draw_notice(frame: &mut Frame, message: &str) {
@@ -691,18 +704,6 @@ pub fn run(dir: &Path) -> Result<()> {
     event_loop(App::new(dir)?, dir)
 }
 
-pub fn run_hosts(dir: &Path) -> Result<()> {
-    event_loop(
-        App {
-            dir: dir.to_path_buf(),
-            hosts: Some(hosts::Hosts::new(dir)?),
-            hosts_active: true,
-            ..App::default()
-        },
-        dir,
-    )
-}
-
 fn event_loop(mut app: App, dir: &Path) -> Result<()> {
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -745,6 +746,33 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn keys_app(dir: &Path) -> App {
+        let mut app = App::new(dir).unwrap();
+        app.input(press(KeyCode::Char('k'))).unwrap();
+        app
+    }
+
+    #[test]
+    fn hosts_is_the_default_and_new_shortcut_follows_the_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new(dir.path()).unwrap();
+        assert!(app.hosts_active);
+        app.input(press(KeyCode::Char('N'))).unwrap();
+        assert!(app.hosts.as_ref().unwrap().is_editing());
+        app.input(press(KeyCode::Esc)).unwrap();
+        app.input(press(KeyCode::Left)).unwrap();
+        assert!(!app.hosts_active);
+        assert_eq!(app.focus, Focus::List);
+        app.input(press(KeyCode::Char('n'))).unwrap();
+        assert!(matches!(app.wizard, Some(Wizard::Parameters(_))));
+        app.input(press(KeyCode::Esc)).unwrap();
+        app.input(press(KeyCode::Right)).unwrap();
+        assert!(app.hosts_active);
+        assert_eq!(app.focus, Focus::List);
+        app.input(press(KeyCode::Tab)).unwrap();
+        assert!(app.hosts_active);
+    }
+
     #[test]
     fn page_shortcuts_and_enter_actions_follow_the_active_page() {
         let dir = tempfile::tempdir().unwrap();
@@ -753,7 +781,7 @@ mod tests {
             "Host work\n HostName example.invalid\nHost *\n Port 22\n",
         )
         .unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         app.input(press(KeyCode::Char('H'))).unwrap();
         app.input(press(KeyCode::Char('h'))).unwrap();
         assert!(app.hosts_active);
@@ -778,6 +806,8 @@ mod tests {
             private: true,
         });
         app.table.select(Some(0));
+        assert!(app.input(press(KeyCode::Char('l'))).unwrap().1.is_none());
+        assert!(app.input(press(KeyCode::Char('L'))).unwrap().1.is_none());
         assert!(matches!(
             app.input(press(KeyCode::Enter)).unwrap().1,
             Some(Work::Load(_))
@@ -787,7 +817,7 @@ mod tests {
     #[test]
     fn key_sections_show_the_selected_key_and_enter_hint() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         for name in ["first", "second"] {
             app.keys.push(Key {
                 path: dir.path().join(name),
@@ -816,6 +846,9 @@ mod tests {
                 assert!(screen.contains(label), "Missing {label}");
             }
             assert!(!screen.contains(" Status "));
+            assert!(!screen.contains("[L]"));
+            assert!(!screen.contains("Esc: quit"));
+            assert!(!screen.contains("Up/Down:"));
         }
         app.input(press(KeyCode::Down)).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
@@ -837,12 +870,11 @@ mod tests {
             "Host first\n HostName first.invalid\nHost second\n HostName second.invalid\n",
         )
         .unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         app.input(press(KeyCode::Tab)).unwrap();
         assert!(!app.hosts_active);
         app.input(press(KeyCode::Left)).unwrap();
-        assert_eq!(app.focus, Focus::Pages);
-        app.input(press(KeyCode::Right)).unwrap();
+        assert_eq!(app.focus, Focus::List);
         assert!(app.hosts_active);
         app.input(press(KeyCode::Enter)).unwrap();
         app.input(press(KeyCode::Down)).unwrap();
@@ -881,7 +913,7 @@ mod tests {
     #[test]
     fn both_tabs_are_visible_and_active_tab_is_highlighted() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         app.focus = Focus::Pages;
         for active in ["Keys", "Hosts"] {
@@ -891,7 +923,8 @@ mod tests {
             assert!(
                 row.contains("Keys")
                     && row.contains("Hosts")
-                    && row.contains("Left/Right: pick page")
+                    && !row.contains("Left/Right")
+                    && !row.contains("Esc:")
             );
             let column = row.find(active).unwrap() as u16;
             assert_eq!(buffer[(column, 1)].bg, Color::Cyan);
@@ -902,22 +935,34 @@ mod tests {
     #[test]
     fn arrow_action_picker_runs_actions_and_notices_require_acknowledgment() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
-        app.input(press(KeyCode::Right)).unwrap();
+        let mut app = keys_app(dir.path());
+        app.keys.push(Key {
+            path: dir.path().join("id_test"),
+            algorithm: "ssh-ed25519".into(),
+            fingerprint: "SHA256:test".into(),
+            private: true,
+        });
+        app.table.select(Some(0));
+        app.input(press(KeyCode::Down)).unwrap();
         assert_eq!(app.focus, Focus::Actions);
         app.input(press(KeyCode::Right)).unwrap();
         app.input(press(KeyCode::Right)).unwrap();
+        assert_eq!(app.action, 0);
+        app.input(press(KeyCode::Left)).unwrap();
+        assert!(app.input(press(KeyCode::Enter)).unwrap().1.is_none());
         assert!(matches!(
-            app.input(press(KeyCode::Enter)).unwrap().1,
-            Some(Work::Doctor)
+            app.wizard,
+            Some(Wizard::Delete { confirm: false, .. })
         ));
+        app.input(press(KeyCode::Enter)).unwrap();
+        assert!(app.wizard.is_none());
         app.message = "An action failed. Try again.".into();
         app.input(press(KeyCode::Char('h'))).unwrap();
         assert!(!app.hosts_active);
         app.input(press(KeyCode::Enter)).unwrap();
         assert!(app.message.is_empty());
         app.input(press(KeyCode::Char('h'))).unwrap();
-        app.input(press(KeyCode::Right)).unwrap();
+        app.input(press(KeyCode::Down)).unwrap();
         app.input(press(KeyCode::Enter)).unwrap();
         assert!(app.hosts.as_ref().unwrap().is_editing());
         app.input(press(KeyCode::Esc)).unwrap();
@@ -925,9 +970,30 @@ mod tests {
     }
 
     #[test]
+    fn deletion_requires_explicit_confirmation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = keys_app(dir.path());
+        app.keys.push(Key {
+            path: dir.path().join("id_test"),
+            algorithm: "ssh-ed25519".into(),
+            fingerprint: "SHA256:test".into(),
+            private: true,
+        });
+        app.table.select(Some(0));
+        app.input(press(KeyCode::Char('d'))).unwrap();
+        assert!(app.input(press(KeyCode::Enter)).unwrap().1.is_none());
+        assert!(app.wizard.is_none());
+        app.input(press(KeyCode::Char('d'))).unwrap();
+        app.input(press(KeyCode::Down)).unwrap();
+        assert!(
+            matches!(app.input(press(KeyCode::Enter)).unwrap().1, Some(Work::Delete(key)) if key.path.ends_with("id_test"))
+        );
+    }
+
+    #[test]
     fn empty_screen_renders_and_wizard_can_be_cancelled() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|f| app.draw(f)).unwrap();
         app.input(press(KeyCode::Char('g'))).unwrap();
@@ -940,7 +1006,7 @@ mod tests {
     #[test]
     fn generation_and_remote_validation_follow_wizard_steps() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         app.input(press(KeyCode::Char('g'))).unwrap();
         assert!(matches!(
             app.input(press(KeyCode::Enter)).unwrap().1,
@@ -978,7 +1044,7 @@ mod tests {
     #[test]
     fn small_terminal_does_not_panic() {
         let dir = tempfile::tempdir().unwrap();
-        let mut app = App::new(dir.path()).unwrap();
+        let mut app = keys_app(dir.path());
         for (width, height) in [(1, 1), (40, 8), (60, 18), (120, 40)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal.draw(|f| app.draw(f)).unwrap();
