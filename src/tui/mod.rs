@@ -679,7 +679,9 @@ fn draw_notice(frame: &mut Frame, message: &str) {
     );
 }
 
-struct Screen;
+struct Screen {
+    active: bool,
+}
 impl Screen {
     fn enter() -> Result<Terminal<CrosstermBackend<Stdout>>> {
         enable_raw_mode()
@@ -693,10 +695,17 @@ impl Screen {
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
     }
+
+    fn leave(&mut self) {
+        if self.active {
+            Self::restore();
+            self.active = false;
+        }
+    }
 }
 impl Drop for Screen {
     fn drop(&mut self) {
-        Self::restore();
+        self.leave();
     }
 }
 
@@ -710,7 +719,7 @@ fn event_loop(mut app: App, dir: &Path) -> Result<()> {
         Screen::restore();
         previous_hook(info);
     }));
-    let _screen = Screen;
+    let mut screen = Screen { active: true };
     let mut terminal = Screen::enter()?;
     loop {
         terminal.draw(|frame| app.draw(frame))?;
@@ -724,10 +733,11 @@ fn event_loop(mut app: App, dir: &Path) -> Result<()> {
             match app.input(key) {
                 Ok((false, _)) => break,
                 Ok((_, Some(work))) => {
-                    Screen::restore();
+                    screen.leave();
                     if !app.work(dir, work)? {
                         return Ok(());
                     }
+                    screen.active = true;
                     terminal = Screen::enter()?;
                 }
                 Ok(_) => {}

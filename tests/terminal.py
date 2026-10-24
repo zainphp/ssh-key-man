@@ -184,7 +184,7 @@ def main():
             original = "# Preserve this file\nHost existing\n    HostName old.example.invalid\n    ProxyJump gateway\n\nHost *\n    ServerAliveInterval 30\n"
             config_path.write_text(original)
             ssh_stub = tools / "ssh"
-            ssh_stub.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ -t 0 ] && [ -t 1 ] || exit 92\nstty -a | grep -q -- '-icanon' && exit 93\nprintf 'SSH session ready for %s\\n' \"$2\"\nIFS= read -r command\n[ \"$command\" = exit ] || exit 255\n")
+            ssh_stub.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ -t 0 ] && [ -t 1 ] || exit 92\nstty -a | grep -q -- '-icanon' && exit 93\nprintf 'SSH session ready for %s\\n' \"$2\"\nIFS= read -r command\n[ \"$command\" = exit ] || { echo 'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!' >&2; echo 'Host key verification failed.' >&2; exit 255; }\n")
             ssh_stub.chmod(0o700)
             hosts = Session(binary, ["hosts"], remote_env, tui=True)
             try:
@@ -225,9 +225,12 @@ def main():
                     connection.expect("SSH session ready for work")
                     connection.send(command + "\n")
                     if expected:
+                        connection.expect("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!")
                         connection.expect("Could not connect to SSH alias work")
                     connection.finish(expected=expected)
                     assert connection.transcript.count(b"\x1b[?1049h") == 1, "The TUI reopened after SSH"
+                    output_start = connection.transcript.index(b"SSH session ready for work")
+                    assert b"\x1b[?1049l" not in connection.transcript[output_start:], "Terminal cleanup can overwrite SSH output"
                 finally:
                     connection.close()
             hosts = Session(binary, ["hosts"], env, tui=True)
