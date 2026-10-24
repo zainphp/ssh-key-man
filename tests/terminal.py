@@ -183,12 +183,15 @@ def main():
             config_path = home / ".ssh/config"
             original = "# Preserve this file\nHost existing\n    HostName old.example.invalid\n    ProxyJump gateway\n\nHost *\n    ServerAliveInterval 30\n"
             config_path.write_text(original)
-            hosts = Session(binary, ["hosts"], env, tui=True)
+            ssh_stub = tools / "ssh"
+            ssh_stub.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ -t 0 ] && [ -t 1 ] || exit 92\nstty -a | grep -q -- '-icanon' && exit 93\nprintf 'SSH session ready for %s\\n' \"$2\"\nIFS= read -r command\n[ \"$command\" = exit ] || exit 255\n")
+            ssh_stub.chmod(0o700)
+            hosts = Session(binary, ["hosts"], remote_env, tui=True)
             try:
                 hosts.expect("Hosts in ~/.ssh/config")
-                hosts.send("\t")
+                hosts.send("K")
                 hosts.expect("[G]enerate & Setup")
-                hosts.send("h")
+                hosts.send("H")
                 hosts.expect("Hosts in ~/.ssh/config")
                 hosts.send("a")
                 hosts.expect("Add SSH host")
@@ -204,6 +207,15 @@ def main():
                 settings = subprocess.check_output(["ssh", "-G", "-F", str(config_path), "work"], env=env, text=True, stderr=subprocess.DEVNULL)
                 for value in ["hostname server.example.invalid\n", "user alice\n", "port 2200\n", "identityfile ~/.ssh/id_cli\n"]:
                     assert value in settings, settings
+                hosts.expect("Enter: connect to selected host")
+                hosts.send("\r")
+                hosts.expect("SSH session ready for work")
+                hosts.send("exit\n")
+                hosts.expect("SSH session to work ended.")
+                hosts.send("\r")
+                hosts.expect("SSH session ready for work")
+                hosts.send("fail\n")
+                hosts.expect("Could not connect to SSH alias work")
                 hosts.send("d")
                 hosts.expect("Delete SSH host")
                 hosts.send("n")
@@ -224,6 +236,8 @@ def main():
             try:
                 tui.expect("ssh-key-man")
                 tui.expect("Tab: switch tabs")
+                tui.expect("Enter: load selected key")
+                tui.expect("Key details")
                 tui.send("\t")
                 tui.expect("Hosts in ~/.ssh/config")
                 tui.send("a")

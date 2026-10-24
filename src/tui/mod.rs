@@ -52,6 +52,7 @@ enum Work {
     },
     Load(Key),
     Doctor,
+    Connect(String),
 }
 
 #[derive(Default)]
@@ -100,6 +101,17 @@ impl App {
             && (!self.hosts_active || self.hosts.as_ref().is_some_and(|h| !h.is_editing()));
         if can_switch {
             match event.code {
+                KeyCode::Char('k' | 'K') => {
+                    self.hosts_active = false;
+                    self.refresh(&self.dir.clone())?;
+                    return Ok((true, None));
+                }
+                KeyCode::Char('h' | 'H') => {
+                    if !self.hosts_active {
+                        self.open_hosts()?;
+                    }
+                    return Ok((true, None));
+                }
                 KeyCode::Tab | KeyCode::BackTab => {
                     if self.hosts_active {
                         self.hosts_active = false;
@@ -118,6 +130,13 @@ impl App {
                 .hosts
                 .as_mut()
                 .context("Hosts tab is unavailable. Restart skm and try again.")?;
+            if !hosts.is_editing() && event.code == KeyCode::Enter {
+                match hosts.connection_alias() {
+                    Ok(alias) => return Ok((true, Some(Work::Connect(alias)))),
+                    Err(e) => hosts.message = format!("{e:#}"),
+                }
+                return Ok((true, None));
+            }
             match hosts.input(&self.dir, event) {
                 Ok(false) => {
                     self.hosts_active = false;
@@ -242,7 +261,7 @@ impl App {
                     ));
                 }
             }
-            KeyCode::Up | KeyCode::Char('k') => self
+            KeyCode::Up => self
                 .table
                 .select(self.table.selected().map(|i| i.saturating_sub(1))),
             _ => {}
@@ -262,6 +281,22 @@ impl App {
 
     fn work(&mut self, dir: &Path, work: Work) {
         let result = match work {
+            Work::Connect(alias) => {
+                let result = crate::process::command("ssh").and_then(|mut command| {
+                    command.arg("--").arg(&alias);
+                    crate::process::interactive(
+                        &mut command,
+                        &format!("connect to SSH alias {alias}"),
+                    )
+                });
+                if let Some(hosts) = self.hosts.as_mut() {
+                    hosts.message = match result {
+                        Ok(()) => format!("SSH session to {alias} ended."),
+                        Err(e) => format!("{e:#} Check the alias settings, network access, and login details, then press Enter to retry."),
+                    };
+                }
+                return;
+            }
             Work::Generate { name, rsa } => {
                 println!("OpenSSH will ask for an optional passphrase. Input is hidden.");
                 keys::generate(dir, &name, rsa).map(|key| {
@@ -344,9 +379,8 @@ impl App {
         let areas = Layout::vertical([
             Constraint::Length(3),
             Constraint::Min(4),
-            Constraint::Length(2),
             Constraint::Length(5),
-            Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(area);
         let status = if let Some(agent) = &self.agent {
@@ -362,13 +396,14 @@ impl App {
             areas[0],
         );
         draw_tabs(frame, areas[0], 0);
+        let sections = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .split(areas[1]);
         if self.keys.is_empty() {
             frame.render_widget(
-                Paragraph::new(
-                    "No SSH keys found in ~/.ssh/.\nPress G to generate a key and set up a server.",
-                )
-                .block(Block::default().title(" Keys ").borders(Borders::ALL)),
-                areas[1],
+                Paragraph::new("No keys found.\nPress G to generate a key.")
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().title(" Keys ").borders(Borders::ALL)),
+                sections[0],
             );
         } else {
             let rows = self.keys.iter().map(|key| {
@@ -376,71 +411,66 @@ impl App {
                     .agent
                     .as_ref()
                     .is_some_and(|a| a.fingerprints.contains(&key.fingerprint));
-                Row::new(vec![
-                    Cell::from(
-                        key.path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned(),
-                    ),
-                    Cell::from(key.algorithm.clone()),
-                    Cell::from(key.fingerprint.clone()),
-                    Cell::from(if loaded {
+                Row::new(vec![Cell::from(format!(
+                    "{}\n{}",
+                    key.path.file_name().unwrap_or_default().to_string_lossy(),
+                    if loaded {
                         "Loaded in Agent"
                     } else if !key.private {
                         "Public Key Only"
                     } else {
                         "Not Loaded"
-                    }),
-                ])
+                    }
+                ))])
+                .height(2)
             });
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Percentage(24),
-                    Constraint::Length(12),
-                    Constraint::Min(8),
-                    Constraint::Length(16),
-                ],
-            )
-            .header(
-                Row::new(["Filename", "Algorithm", "Fingerprint", "Status"])
-                    .style(Style::default().add_modifier(Modifier::BOLD)),
-            )
-            .block(
-                Block::default()
-                    .title(" Keys in ~/.ssh/ ")
-                    .borders(Borders::ALL),
-            )
-            .row_highlight_style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> ");
-            frame.render_stateful_widget(table, areas[1], &mut self.table);
+            let table = Table::new(rows, [Constraint::Min(0)])
+                .block(
+                    Block::default()
+                        .title(" Keys in ~/.ssh/ ")
+                        .borders(Borders::ALL),
+                )
+                .row_highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol("> ");
+            frame.render_stateful_widget(table, sections[0], &mut self.table);
         }
-        let fingerprint = self
+        let details = self
             .table
             .selected()
             .and_then(|i| self.keys.get(i))
-            .map(|k| k.fingerprint.clone())
-            .unwrap_or_default();
+            .map(|key| {
+                format!(
+                    "File: {}\nAlgorithm: {}\nFingerprint: {}",
+                    key.path.display(),
+                    key.algorithm,
+                    key.fingerprint
+                )
+            })
+            .unwrap_or_else(|| "Select a key to see its algorithm and fingerprint.".into());
         frame.render_widget(
-            Paragraph::new(fingerprint).wrap(Wrap { trim: false }),
-            areas[2],
+            Paragraph::new(details).wrap(Wrap { trim: false }).block(
+                Block::default()
+                    .title(" Key details ")
+                    .borders(Borders::ALL),
+            ),
+            sections[1],
         );
         frame.render_widget(
             Paragraph::new(self.message.as_str())
                 .wrap(Wrap { trim: false })
                 .block(Block::default().title(" Status ").borders(Borders::TOP)),
-            areas[3],
+            areas[2],
         );
         frame.render_widget(
-            Paragraph::new("[G]enerate & Setup [L]oad Key [D]octor [H]osts [Q]uit"),
-            areas[4],
+            Paragraph::new(
+                "Enter: load selected key\n[G]enerate & Setup [L]oad Key [D]octor [H]osts [Q]uit",
+            ),
+            areas[3],
         );
         if let Some(wizard) = &self.wizard {
             let popup = Rect::new(
@@ -470,9 +500,9 @@ impl App {
 
 fn draw_tabs(frame: &mut Frame, header: Rect, selected: usize) {
     let row = Rect::new(header.x, header.y + 1, header.width, 1);
-    let parts = Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(row);
+    let parts = Layout::horizontal([Constraint::Length(30), Constraint::Min(0)]).split(row);
     frame.render_widget(
-        Tabs::new(["Keys", "Hosts"])
+        Tabs::new(["[K] Keys", "[H] Hosts"])
             .select(selected)
             .highlight_style(
                 Style::default()
@@ -560,6 +590,90 @@ mod tests {
     use ratatui::backend::TestBackend;
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn page_shortcuts_and_enter_actions_follow_the_active_page() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config"),
+            "Host work\n HostName example.invalid\nHost *\n Port 22\n",
+        )
+        .unwrap();
+        let mut app = App::new(dir.path()).unwrap();
+        app.input(press(KeyCode::Char('H'))).unwrap();
+        app.input(press(KeyCode::Char('h'))).unwrap();
+        assert!(app.hosts_active);
+        assert!(
+            matches!(app.input(press(KeyCode::Enter)).unwrap().1, Some(Work::Connect(alias)) if alias == "work")
+        );
+        app.input(press(KeyCode::Down)).unwrap();
+        assert!(app.input(press(KeyCode::Enter)).unwrap().1.is_none());
+        assert!(app.hosts.as_ref().unwrap().message.contains("single alias"));
+        app.input(press(KeyCode::Char('a'))).unwrap();
+        app.input(press(KeyCode::Char('K'))).unwrap();
+        assert!(app.hosts_active && app.hosts.as_ref().unwrap().is_editing());
+        app.input(press(KeyCode::Esc)).unwrap();
+        app.input(press(KeyCode::Char('K'))).unwrap();
+        app.input(press(KeyCode::Char('k'))).unwrap();
+        assert!(!app.hosts_active);
+        app.keys.push(Key {
+            path: dir.path().join("id_test"),
+            algorithm: "ssh-ed25519".into(),
+            fingerprint: "SHA256:test".into(),
+            private: true,
+        });
+        app.table.select(Some(0));
+        assert!(matches!(
+            app.input(press(KeyCode::Enter)).unwrap().1,
+            Some(Work::Load(_))
+        ));
+    }
+
+    #[test]
+    fn key_sections_show_the_selected_key_and_enter_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new(dir.path()).unwrap();
+        for name in ["first", "second"] {
+            app.keys.push(Key {
+                path: dir.path().join(name),
+                algorithm: "ssh-ed25519".into(),
+                fingerprint: format!("SHA256:{name}"),
+                private: true,
+            });
+        }
+        app.table.select(Some(0));
+        for (width, height) in [(60, 18), (110, 30)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|f| app.draw(f)).unwrap();
+            let screen: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|c| c.symbol())
+                .collect();
+            for label in [
+                "Keys in ~/.ssh/",
+                "Key details",
+                "Status",
+                "Enter: load selected key",
+                "Fingerprint:",
+            ] {
+                assert!(screen.contains(label), "Missing {label}");
+            }
+        }
+        app.input(press(KeyCode::Down)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(screen.contains("SHA256:second"));
     }
     #[test]
     fn tabs_switch_preserve_selection_and_leave_forms_in_control() {

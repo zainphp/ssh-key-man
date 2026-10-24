@@ -24,6 +24,16 @@ pub(super) struct Hosts {
 }
 
 impl Hosts {
+    pub fn connection_alias(&self) -> Result<String> {
+        let entry = self
+            .table
+            .selected()
+            .and_then(|i| self.config.entries.get(i))
+            .context("No host selected. Press A to add an alias first.")?;
+        crate::hosts::validate_alias(&entry.host.alias)?;
+        Ok(entry.host.alias.clone())
+    }
+
     pub fn is_editing(&self) -> bool {
         self.form.is_some() || self.deleting
     }
@@ -129,7 +139,7 @@ impl Hosts {
             return Ok(true);
         }
         match event.code {
-            KeyCode::Esc | KeyCode::Char('q' | 'Q' | 'h' | 'H') => return Ok(false),
+            KeyCode::Esc | KeyCode::Char('q' | 'Q') => return Ok(false),
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.config.entries.is_empty() {
                     self.table.select(Some(
@@ -137,7 +147,7 @@ impl Hosts {
                     ));
                 }
             }
-            KeyCode::Up | KeyCode::Char('k') => self
+            KeyCode::Up => self
                 .table
                 .select(self.table.selected().map(|i| i.saturating_sub(1))),
             KeyCode::Char('a' | 'A') => {
@@ -148,7 +158,7 @@ impl Hosts {
                 });
                 self.message.clear();
             }
-            KeyCode::Enter | KeyCode::Char('e' | 'E' | 'd' | 'D') => {
+            KeyCode::Char('e' | 'E' | 'd' | 'D') => {
                 let index = self
                     .table
                     .selected()
@@ -191,7 +201,7 @@ impl Hosts {
             Constraint::Min(3),
             Constraint::Length(3),
             Constraint::Length(5),
-            Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(area);
         frame.render_widget(
@@ -262,7 +272,9 @@ impl Hosts {
             parts[3],
         );
         frame.render_widget(
-            Paragraph::new("[A]dd [E]dit [D]elete [Esc] Keys [Q]uit"),
+            Paragraph::new(
+                "Enter: connect to selected host\n[A]dd [E]dit [D]elete [Esc] Keys [Q]uit",
+            ),
             parts[4],
         );
         if self.form.is_some() || self.deleting {

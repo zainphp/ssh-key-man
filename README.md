@@ -10,7 +10,7 @@ skm --help
 skm
 ```
 
-Running without a subcommand opens the TUI with visible Keys and Hosts tabs. Tab or Shift+Tab switches tabs when no form or confirmation is open. Each tab keeps its selection. Use Up/Down to select a key, G to generate and set up a key, L to load it, D to find or start an agent, H to manage host aliases, and Q to quit. Inside a form, Tab switches fields. Escape cancels before generation or goes back from server details. In the registration question, Escape skips registration and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
+Running without a subcommand opens the TUI with visible Keys and Hosts tabs. K opens Keys and H opens Hosts from either page. Tab or Shift+Tab also switches pages when no form or confirmation is open. Each page keeps its selection. Keys are divided into a key list, selected-key details, and status sections. Use Up/Down to select a key, G to generate and set up a key, L to load it, D to find or start an agent, and Q to quit. Each tab shows its Enter action: load the selected key in Keys, or connect to the selected alias in Hosts. Inside a form, Tab switches fields. Escape cancels before generation or goes back from server details. In the registration question, Escape skips registration and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
 
 ```sh
 skm hosts               # Add, edit, or delete SSH host aliases
@@ -21,7 +21,7 @@ skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
 skm init zsh            # Print shell configuration (bash and fish also supported)
 ```
 
-Open the Hosts tab with Tab or H, or run `skm hosts` directly to manage `~/.ssh/config`. Press A to add an alias, E or Enter to edit or rename the selected alias, and D to delete it after confirmation. Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields empty to inherit SSH settings. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
+Open the Hosts tab with Tab or H, or run `skm hosts` directly to manage `~/.ssh/config`. Press Enter on a selected alias to open an SSH session in the current terminal. The Hosts tab returns when the session ends. Press A to add an alias, E to edit or rename the selected alias, and D to delete it after confirmation. Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields empty to inherit SSH settings. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
 
 For example, save alias `work`, hostname `server.example.com`, user `alice`, port `2222`, and key file `~/.ssh/id_work`. Then connect with:
 

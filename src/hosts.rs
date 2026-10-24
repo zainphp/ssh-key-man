@@ -13,6 +13,18 @@ use std::{
 
 const FIELDS: [&str; 4] = ["hostname", "user", "port", "identityfile"];
 
+pub fn validate_alias(alias: &str) -> Result<()> {
+    if alias.is_empty()
+        || alias.starts_with('-')
+        || !alias
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    {
+        bail!("Invalid alias. Select or enter a single alias using letters, numbers, dots, underscores, or hyphens, such as work-server.");
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Host {
     pub alias: String,
@@ -28,15 +40,7 @@ impl Host {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.alias.is_empty()
-            || self.alias.starts_with('-')
-            || !self
-                .alias
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
-        {
-            bail!("Invalid alias. Use letters, numbers, dots, underscores, or hyphens, such as work-server.");
-        }
+        validate_alias(&self.alias)?;
         if self.hostname.is_empty()
             || self.hostname.starts_with('-')
             || !self
