@@ -1,6 +1,6 @@
 # ssh-key-man
 
-Create SSH keys, register them on servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
+Create SSH keys, manage host aliases, register keys on servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
 
 Requires Linux, macOS, or WSL, the current stable Rust toolchain (2021 edition), and OpenSSH's `ssh-keygen`, `ssh-agent`, `ssh-add`, and `ssh-copy-id` in `PATH`. Debian/Ubuntu users can install `build-essential openssh-client`; macOS users need the Command Line Tools and `ssh-copy-id` (for example, `brew install ssh-copy-id`). Native Windows is not supported.
 
@@ -10,15 +10,29 @@ skm --help
 skm
 ```
 
-Running without a subcommand opens the TUI. Use Up/Down to select a key, G to generate and set up a key, L to load it, D to find or start an agent, and Q to quit. Tab switches wizard fields. Escape cancels before generation or goes back from server details. In the registration question, Escape skips registration and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
+Running without a subcommand opens the TUI with visible Keys and Hosts tabs. Tab or Shift+Tab switches tabs when no form or confirmation is open. Each tab keeps its selection. Use Up/Down to select a key, G to generate and set up a key, L to load it, D to find or start an agent, H to manage host aliases, and Q to quit. Inside a form, Tab switches fields. Escape cancels before generation or goes back from server details. In the registration question, Escape skips registration and loads the saved key. Resize a small terminal to at least 60 columns and 18 rows.
 
 ```sh
+skm hosts               # Add, edit, or delete SSH host aliases
 skm gen                 # Guided generation and optional remote registration
 skm load id_ed25519     # Load one private key from ~/.ssh/
 skm load                # Load all discovered private keys
 skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
 skm init zsh            # Print shell configuration (bash and fish also supported)
 ```
+
+Open the Hosts tab with Tab or H, or run `skm hosts` directly to manage `~/.ssh/config`. Press A to add an alias, E or Enter to edit or rename the selected alias, and D to delete it after confirmation. Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields empty to inherit SSH settings. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
+
+For example, save alias `work`, hostname `server.example.com`, user `alice`, port `2222`, and key file `~/.ssh/id_work`. Then connect with:
+
+```sh
+ssh work
+scp report.txt work:~/
+```
+
+The editor preserves other blocks, comments, and extra options such as `ProxyJump`. Before replacing an existing config, it saves a private `~/.ssh/config.skm-backup-*` copy. Saves are atomic, use permissions 600, and refuse detected external edits; reopen Hosts after changing the file elsewhere. To restore a backup, copy it over `~/.ssh/config` and keep permissions 600.
+
+Only single-alias blocks with one value per managed setting can be edited or deleted here. Wildcards, multi-alias blocks, and repeated settings are read-only. `Match` sections and `Include` directives are preserved; included files are not opened or expanded. Symlinked config files must be edited directly. Values shown are the settings written in each block, not the effective settings after all SSH rules. Existing earlier rules can take priority; use `ssh -G work` to inspect the effective settings. New aliases go before existing rules, with a scope reset when needed to preserve global defaults for other hosts.
 
 Generation supports Ed25519 (default) and RSA 4096. Choose a filename in `~/.ssh/`. Existing private or public files are never overwritten. OpenSSH asks for an optional passphrase using its own hidden terminal prompt; the application never accepts a passphrase argument. The TUI temporarily returns to the normal terminal for passphrase and server login prompts.
 

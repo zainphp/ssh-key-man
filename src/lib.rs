@@ -3,6 +3,7 @@ compile_error!("ssh-key-man requires Unix sockets. Use Linux, macOS, or WSL.");
 
 pub mod agent;
 pub mod cli;
+pub mod hosts;
 pub mod keys;
 mod process;
 mod tui;
@@ -33,6 +34,10 @@ fn dispatch(cli: cli::Cli) -> Result<()> {
             tui::run(&dir)
         }
         Some(cli::Commands::Gen) => generate_wizard(&dir),
+        Some(cli::Commands::Hosts) => {
+            keys::require_terminal()?;
+            tui::run_hosts(&dir)
+        }
         Some(cli::Commands::Load { filename }) => {
             let inventory = keys::inventory(&dir)?;
             for warning in &inventory.warnings {

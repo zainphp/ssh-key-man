@@ -76,10 +76,10 @@ class Session:
     def send(self, text):
         os.write(self.fd, text.encode())
 
-    def expect(self, text):
+    def expect(self, text, visible=True):
         expected = text.encode()
         deadline = time.monotonic() + 20
-        while expected not in self.pending and not (self.tui and text in self.screen()):
+        while (text in self.screen() if not visible else expected not in self.pending and not (self.tui and text in self.screen())):
             assert time.monotonic() < deadline, f"Timed out waiting for {text!r}: {self.screen() if self.tui else self.pending[:2000]!r}"
             if not select.select([self.fd], [], [], 0.1)[0]:
                 continue
@@ -180,9 +180,58 @@ def main():
                 remote.finish(expected=1)
             finally:
                 remote.close()
+            config_path = home / ".ssh/config"
+            original = "# Preserve this file\nHost existing\n    HostName old.example.invalid\n    ProxyJump gateway\n\nHost *\n    ServerAliveInterval 30\n"
+            config_path.write_text(original)
+            hosts = Session(binary, ["hosts"], env, tui=True)
+            try:
+                hosts.expect("Hosts in ~/.ssh/config")
+                hosts.send("\t")
+                hosts.expect("[G]enerate & Setup")
+                hosts.send("h")
+                hosts.expect("Hosts in ~/.ssh/config")
+                hosts.send("a")
+                hosts.expect("Add SSH host")
+                hosts.send("office\tserver.example.invalid\talice\t2222\t~/.ssh/id_cli\r")
+                hosts.expect("Saved office.")
+                saved = config_path.read_text()
+                assert saved.endswith(original), "Adding an alias changed existing content"
+                assert "Port 2222" in saved
+                hosts.send("e")
+                hosts.expect("Edit SSH host")
+                hosts.send("\x15work\t\t\t\x152200\r")
+                hosts.expect("Saved work.")
+                settings = subprocess.check_output(["ssh", "-G", "-F", str(config_path), "work"], env=env, text=True, stderr=subprocess.DEVNULL)
+                for value in ["hostname server.example.invalid\n", "user alice\n", "port 2200\n", "identityfile ~/.ssh/id_cli\n"]:
+                    assert value in settings, settings
+                hosts.send("d")
+                hosts.expect("Delete SSH host")
+                hosts.send("n")
+                hosts.expect("Delete SSH host", visible=False)
+                assert "Host work" in config_path.read_text(), "Cancelling deletion removed an alias"
+                hosts.send("d")
+                hosts.expect("Delete SSH host")
+                hosts.send("y")
+                hosts.expect("Deleted alias work.")
+                assert "Host work" not in config_path.read_text()
+                assert original in config_path.read_text()
+                hosts.send("q")
+                hosts.finish()
+                assert list((home / ".ssh").glob("config.skm-backup-*")), "No config backup was created"
+            finally:
+                hosts.close()
             tui = Session(binary, [], env, tui=True)
             try:
                 tui.expect("ssh-key-man")
+                tui.expect("Tab: switch tabs")
+                tui.send("\t")
+                tui.expect("Hosts in ~/.ssh/config")
+                tui.send("a")
+                tui.expect("Add SSH host")
+                tui.send("\x1b")
+                tui.expect("Add SSH host", visible=False)
+                tui.send("\x1b[Z")
+                tui.expect("[G]enerate & Setup")
                 tui.send("g")
                 tui.expect("Generate key: step 1 of 3")
                 tui.send(" \t" + "\x7f" * len("id_rsa") + "id_tui\r")
@@ -216,7 +265,7 @@ def main():
         finally:
             agent.terminate()
             agent.wait(timeout=5)
-    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, validation, loading, doctor, and terminal restoration")
+    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, doctor, and terminal restoration")
 
 
 if __name__ == "__main__":

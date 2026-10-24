@@ -1,10 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(
-    version,
-    about = "Create SSH keys, register servers, and manage your SSH agent"
-)]
+#[command(version, about = "Manage SSH keys, host aliases, and your SSH agent")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -14,6 +11,8 @@ pub struct Cli {
 pub enum Commands {
     /// Create a key, optionally register it on a server, and load it into the agent
     Gen,
+    /// Add, edit, or delete SSH host aliases in ~/.ssh/config
+    Hosts,
     /// Load a key from ~/.ssh (loads all private keys when no filename is given)
     Load { filename: Option<String> },
     /// Find or start an SSH agent and repair the stable socket link
