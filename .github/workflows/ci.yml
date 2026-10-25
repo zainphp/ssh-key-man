@@ -1,6 +1,8 @@
 name: CI
 on:
+  workflow_call:
   push:
+    branches: ['**']
   pull_request:
 permissions:
   contents: read
@@ -24,6 +26,8 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Run tests
         run: cargo test --all-targets --locked
+      - name: Test installer and CLI updates
+        run: python3 tests/install.py target/debug/skm
       - name: Check terminal workflows
         run: python3 tests/terminal.py
       - name: Build both binaries

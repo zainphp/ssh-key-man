@@ -2,7 +2,31 @@
 
 Create SSH keys, manage host aliases, add public keys to servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
 
-Requires Linux, macOS, or WSL, the current stable Rust toolchain (2021 edition), and OpenSSH's `ssh-keygen`, `ssh-agent`, `ssh-add`, and `ssh-copy-id` in `PATH`. Debian/Ubuntu users can install `build-essential openssh-client`; macOS users need the Command Line Tools and `ssh-copy-id` (for example, `brew install ssh-copy-id`). Native Windows is not supported.
+Install or update on Linux, macOS, or WSL (Intel or ARM64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | sh
+```
+
+The installer downloads a prebuilt GitHub release, verifies its SHA256 checksum, and installs `ssh-key-man` and the `skm` alias in `~/.local/bin`. Rust is not required. Add that directory to `PATH` if the installer asks. It does not use sudo, install system packages, or edit shell files.
+
+Update an existing installation with:
+
+```sh
+skm update
+```
+
+The update command uses the same installer and replaces the binaries in the current installation folder. That folder must be writable. You can also rerun the curl command. Downloads that fail checksum verification leave the existing installation untouched.
+
+To choose a folder or a specific release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | SKM_INSTALL_DIR="$HOME/.local/bin" SKM_VERSION=v0.1.0 sh
+```
+
+Requires OpenSSH's `ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, and `ssh-copy-id` in `PATH`. Debian/Ubuntu users can install `openssh-client`; macOS users can use the system OpenSSH commands and install `ssh-copy-id` separately (`brew install ssh-copy-id`). Native Windows is not supported; use WSL.
+
+To build from source, install the current stable Rust toolchain and a C linker (Debian/Ubuntu: `build-essential`; macOS: Command Line Tools), then run:
 
 ```sh
 cargo install --path . --locked
@@ -17,6 +41,7 @@ Esc quits from a page. In a form or confirmation, Esc cancels that step. Tab doe
 The Keys page has a key list and selected-key details. Results, warnings, and errors appear only when needed in a message popup: Enter dismisses it and Esc quits. There is no persistent Status section. Pressing Enter on a selected key closes the TUI and loads the key into the SSH agent; pressing Enter on a host closes the TUI and starts SSH in the current terminal. The TUI does not reopen after either action, including a failed load or connection. Resize a small terminal to at least 60 columns and 18 rows.
 
 ```sh
+skm update              # Install the latest release
 skm hosts               # Add, edit, or delete SSH host aliases
 skm gen                 # Create a key and optionally add its public key to a server
 skm load id_ed25519     # Load one private key from ~/.ssh/
@@ -88,3 +113,6 @@ cargo build --release --locked
 Integration tests require OpenSSH. They create disposable keys, including an encrypted key, and isolated temporary agents. They check actual fingerprints, duplicate prevention, socket links, file permissions, mismatched public keys, both binary names, and shell output. Tests never add a key to a remote server. CI runs these checks on Linux and macOS.
 
 Text colors highlight actions, loaded keys, warnings, and errors. Set `NO_COLOR=1` to disable colors. CLI output stays plain when redirected; `skm init` always prints plain shell configuration.
+
+
+Releases are published by [release.yml](.github/workflows/release.yml). Set the package version in `Cargo.toml`, update `Cargo.lock`, then push a matching tag such as `v0.1.0`. The workflow runs CI, builds Linux musl and macOS binaries for x86_64 and ARM64, and publishes archives with SHA256 checksum files. Tags containing a hyphen publish a prerelease; the default installer uses the latest stable release. Test the installer locally with `python3 tests/install.py target/debug/skm` after building the binary.

@@ -10,6 +10,7 @@ pub(crate) fn dispatch(cli: cli::Cli) -> Result<()> {
             cli::interactive::require_terminal()?;
             tui::run(&directory)
         }
+        Some(cli::Commands::Update) => update(),
         Some(cli::Commands::Gen) => generate_wizard(&keys::ssh_dir()?),
         Some(cli::Commands::Load { filename }) => load_keys(&keys::ssh_dir()?, filename),
         Some(cli::Commands::Doctor) => check_agent(&keys::ssh_dir()?),
@@ -161,4 +162,22 @@ fn generate_wizard(dir: &Path) -> Result<()> {
         (_, Err(e)) => Err(e).with_context(|| format!("Key was saved, but agent loading failed. Retry with skm load {name}.")),
         _ => Ok(()),
     }
+}
+
+fn update() -> Result<()> {
+    let executable = std::env::current_exe()
+        .context("Could not locate this installation. Run the curl installer to update instead.")?;
+    let directory = executable.parent().context(
+        "Could not locate the installation folder. Run the curl installer to update instead.",
+    )?;
+    println!("Updating ssh-key-man {}...", env!("CARGO_PKG_VERSION"));
+    let status = std::process::Command::new("sh")
+        .args(["-c", include_str!("../install.sh")])
+        .env("SKM_INSTALL_DIR", directory)
+        .status()
+        .context("Could not start the installer. Make sure sh is installed and available in PATH, then retry.")?;
+    if !status.success() {
+        bail!("Update did not finish. Fix the installer error above, then run skm update again.");
+    }
+    Ok(())
 }
