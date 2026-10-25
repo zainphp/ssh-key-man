@@ -394,3 +394,59 @@ fn redirected_cli_errors_remain_plain_text() {
     assert!(!output.stdout.contains(&0x1b));
     assert!(!output.stderr.contains(&0x1b));
 }
+
+#[test]
+fn doctor_reports_all_missing_commands_and_the_agent_blocker() {
+    let home = tempfile::tempdir().unwrap();
+    let tools = home.path().join("tools");
+    fs::create_dir(&tools).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skm"))
+        .arg("doctor")
+        .env("HOME", home.path())
+        .env("PATH", &tools)
+        .env_remove("SSH_AUTH_SOCK")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for name in ["ssh", "ssh-keygen", "ssh-add", "ssh-agent", "ssh-copy-id"] {
+        assert!(
+            stdout
+                .lines()
+                .any(|line| line.split_whitespace().any(|word| word == name)
+                    && line.contains("MISSING")),
+            "Missing command row for {name}: {stdout}"
+        );
+    }
+    assert!(String::from_utf8_lossy(&output.stderr).contains("ssh-add"));
+    assert!(!output.stdout.contains(&0x1b));
+    assert!(!home.path().join(".ssh/agent.sock").exists());
+}
+
+#[test]
+fn missing_ssh_add_does_not_start_an_agent() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join(".ssh");
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    generate(&dir, "id_test", "ed25519", "");
+    let tools = home.path().join("tools");
+    fs::create_dir(&tools).unwrap();
+    let agent = tools.join("ssh-agent");
+    fs::write(
+        &agent,
+        "#!/bin/sh\nprintf started > \"$HOME/agent-started\"\nexit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&agent, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skm"))
+        .args(["load", "id_test"])
+        .env("HOME", home.path())
+        .env("PATH", &tools)
+        .env_remove("SSH_AUTH_SOCK")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Could not find ssh-add"));
+    assert!(!home.path().join("agent-started").exists());
+}

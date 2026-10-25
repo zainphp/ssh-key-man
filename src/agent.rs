@@ -19,7 +19,7 @@ use walkdir::WalkDir;
 
 pub fn unload(dir: &Path, public: &ssh_key::PublicKey) -> Result<()> {
     use std::io::Write;
-    let Some(agent) = current(dir) else {
+    let Some(agent) = current(dir)? else {
         return Ok(());
     };
     let fingerprint = public.fingerprint(ssh_key::HashAlg::Sha256).to_string();
@@ -97,10 +97,11 @@ pub fn probe(socket: &Path) -> Result<Agent> {
     })
 }
 
-pub fn current(dir: &Path) -> Option<Agent> {
-    env::var_os("SSH_AUTH_SOCK")
+pub fn current(dir: &Path) -> Result<Option<Agent>> {
+    process::command("ssh-add")?;
+    Ok(env::var_os("SSH_AUTH_SOCK")
         .and_then(|s| probe(Path::new(&s)).ok())
-        .or_else(|| probe(&dir.join("agent.sock")).ok())
+        .or_else(|| probe(&dir.join("agent.sock")).ok()))
 }
 
 pub fn ensure(dir: &Path) -> Result<Agent> {
@@ -123,7 +124,7 @@ pub fn ensure(dir: &Path) -> Result<Agent> {
     }
     let stable = dir.join("agent.sock");
     check_link_slot(&stable)?;
-    if let Some(agent) = current(dir) {
+    if let Some(agent) = current(dir)? {
         update_link(&stable, &agent.socket)?;
         return Ok(agent);
     }

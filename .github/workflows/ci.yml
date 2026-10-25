@@ -15,6 +15,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Install ssh-copy-id on macOS
+        if: runner.os == 'macOS'
+        run: brew install ssh-copy-id
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check code

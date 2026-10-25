@@ -56,6 +56,8 @@ For Fish, add this to `~/.config/fish/config.fish`:
 set -gx SSH_AUTH_SOCK "$HOME/.ssh/agent.sock"
 ```
 
+`skm doctor` groups command availability, agent details, and shell setup into a readable report. It checks `ssh`, `ssh-keygen`, `ssh-add`, `ssh-agent`, and `ssh-copy-id`, and exits with an error if any are missing. Missing `ssh-add` skips agent setup and reports how to fix it. Colors are disabled when output is redirected or `NO_COLOR=1` is set.
+
 Loading a key finds or starts an SSH agent and creates the link automatically. Use `skm doctor` only if you need to repair the connection. A child process cannot change its parent shell's environment. `skm init` prints configuration only; it does not edit startup files. After a reboot, run `skm doctor` or load a key to find or start a new agent.
 
 Agent selection checks `SSH_AUTH_SOCK`, then the stable link, then `/tmp/ssh-*/agent.*` (and the system temporary directory on macOS), before starting `ssh-agent`. Each socket must belong to the current user and answer `ssh-add`. Probes time out after three seconds. Multiple instances serialize socket updates with a file lock. A regular file at `~/.ssh/agent.sock` is never replaced. The stable link follows whichever verified agent was selected, including a forwarded agent if that is your active `SSH_AUTH_SOCK`.

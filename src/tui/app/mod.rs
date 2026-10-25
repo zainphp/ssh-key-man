@@ -48,9 +48,15 @@ impl App {
     }
 
     fn refresh_keys(&mut self) -> Result<()> {
-        let inventory = keys::inventory(&self.directory)?;
+        let mut inventory = keys::inventory(&self.directory)?;
         self.keys = inventory.keys;
-        self.agent = agent::current(&self.directory);
+        self.agent = match agent::current(&self.directory) {
+            Ok(agent) => agent,
+            Err(error) => {
+                inventory.warnings.push(format!("{error:#}"));
+                None
+            }
+        };
         if !inventory.warnings.is_empty() {
             self.message = inventory.warnings.join("\n");
         }

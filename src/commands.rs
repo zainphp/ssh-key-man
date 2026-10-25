@@ -70,17 +70,44 @@ fn load_keys(dir: &Path, filename: Option<String>) -> Result<()> {
 }
 
 fn check_agent(dir: &Path) -> Result<()> {
-    for binary in ["ssh-keygen", "ssh-add", "ssh-agent", "ssh-copy-id"] {
+    println!("{}\n", Tone::Accent.stdout("ssh-key-man / doctor"));
+    println!("{}", Tone::Accent.stdout("OpenSSH commands"));
+    let mut missing = Vec::new();
+    for binary in ["ssh", "ssh-keygen", "ssh-add", "ssh-agent", "ssh-copy-id"] {
         match which::which(binary) {
-            Ok(path) => println!("{binary}: {}", path.display()),
-            Err(_) => println!(
-                "{binary}: {}. Install OpenSSH to use this command.",
-                Tone::Warning.stdout("missing")
+            Ok(path) => println!(
+                "  {}  {binary:<12} {}",
+                Tone::Success.stdout("OK     "),
+                path.display()
             ),
+            Err(_) => {
+                println!("  {}  {binary}", Tone::Danger.stdout("MISSING"));
+                missing.push(binary);
+            }
         }
     }
-    let agent = agent::ensure(dir)?;
-    println!("SSH agent connection: {}\nShell connection: {}\nKeys loaded into agent: {}\nAdd the output of skm init to your shell startup file.", agent.socket.display(), dir.join("agent.sock").display(), agent.fingerprints.len());
+    println!("\n{}", Tone::Accent.stdout("SSH agent"));
+    if missing.contains(&"ssh-add") {
+        println!(
+            "  {}  Install ssh-add to check the agent.",
+            Tone::Warning.stdout("SKIPPED")
+        );
+    } else {
+        let agent = agent::ensure(dir)?;
+        println!("  {}  Agent is responding", Tone::Success.stdout("OK     "));
+        println!("  {:<16} {}", "Socket", agent.socket.display());
+        println!(
+            "  {:<16} {}",
+            "Shell connection",
+            dir.join("agent.sock").display()
+        );
+        println!("  {:<16} {}", "Loaded keys", agent.fingerprints.len());
+        println!("\n{}", Tone::Accent.stdout("Shell setup"));
+        println!("  Add the output of skm init to your shell startup file.");
+    }
+    if !missing.is_empty() {
+        bail!("Could not find these commands: {}. Install the missing OpenSSH commands and make sure they are in PATH. ssh-copy-id may need a separate installation.", missing.join(", "));
+    }
     Ok(())
 }
 
