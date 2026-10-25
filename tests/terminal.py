@@ -18,16 +18,17 @@ import time
 
 
 class Session:
-    def __init__(self, binary, args, env, tui=False):
+    def __init__(self, binary, args, env, tui=False, width=110, height=30):
+        self.width, self.height = width, height
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
-            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 110, 0, 0))
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", self.height, self.width, 0, 0))
             os.execve(str(binary), [str(binary), *args], env)
         self.pending = b""
         self.transcript = b""
         self.exited = False
         self.tui = tui
-        self.cells = [[" "] * 110 for _ in range(30)]
+        self.cells = [[" "] * self.width for _ in range(self.height)]
         self.row = self.column = 0
         self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.ansi = ""
@@ -46,7 +47,7 @@ class Session:
                     self.row = int(parts[0] or 1) - 1
                     self.column = int(parts[1] or 1) - 1 if len(parts) > 1 else 0
                 elif code == "J" and values == "2":
-                    self.cells = [[" "] * 110 for _ in range(30)]
+                    self.cells = [[" "] * self.width for _ in range(self.height)]
                 continue
             char, self.ansi = self.ansi[0], self.ansi[1:]
             if char == "\x1b":
@@ -58,20 +59,25 @@ class Session:
                 self.column = 0
             elif char == "\n":
                 self.row += 1
-                if self.row >= 30:
+                if self.row >= self.height:
                     self.cells.pop(0)
-                    self.cells.append([" "] * 110)
-                    self.row = 29
+                    self.cells.append([" "] * self.width)
+                    self.row = self.height - 1
             elif char >= " ":
-                if self.column >= 110:
+                if self.column >= self.width:
                     self.column = 0
-                    self.row = min(29, self.row + 1)
-                if 0 <= self.row < 30 and 0 <= self.column < 110:
+                    self.row = min(self.height - 1, self.row + 1)
+                if 0 <= self.row < self.height and 0 <= self.column < self.width:
                     self.cells[self.row][self.column] = char
                 self.column += 1
 
     def screen(self):
         return "\n".join("".join(row) for row in self.cells)
+
+    def resize(self, width, height):
+        self.width, self.height = width, height
+        self.cells = [[" "] * width for _ in range(height)]
+        fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
 
     def send(self, text):
         os.write(self.fd, text.encode())
@@ -178,6 +184,7 @@ def main():
                 remote.expect("Simulated remote failure")
                 remote.expect("Loaded in agent:")
                 remote.finish(expected=1)
+                assert f"ssh-copy-id -i '{home}/.ssh/id_remote.pub' -p 2222 'user@example.invalid'".encode() in remote.transcript
             finally:
                 remote.close()
             config_path = home / ".ssh/config"
@@ -349,5 +356,62 @@ def main():
     print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, confirmed key deletion, agent unloading, and terminal restoration")
 
 
+def audit_regressions(binary):
+    with tempfile.TemporaryDirectory(prefix="skm-layout-") as temporary:
+        home = Path(temporary) / "a-long-but-valid-home-directory-used-to-check-layout"
+        directory = home / ".ssh"
+        directory.mkdir(parents=True, mode=0o700)
+        key = directory / "id_production_host"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+        fingerprint = subprocess.check_output(["ssh-keygen", "-lf", str(key)], text=True).split()[1]
+        config = directory / "config"
+        original = "Host work\n HostName example.invalid\n"
+        config.write_text(original)
+        config.chmod(0o600)
+        env = {**os.environ, "HOME": str(home), "TERM": "xterm-256color"}
+        env.pop("SSH_AUTH_SOCK", None)
+        session = Session(binary, [], env, tui=True, width=60, height=18)
+        try:
+            session.expect("[N] New host")
+            session.send("d")
+            session.expect("Delete SSH host")
+            session.resize(40, 8)
+            session.expect("Make the terminal")
+            session.send("y\r")
+            # Process the attempted confirmation before restoring the supported viewport.
+            time.sleep(0.3)
+            session.resize(60, 18)
+            session.expect("Delete SSH host")
+            assert config.read_text() == original, "A hidden confirmation deleted an alias"
+            session.send("\x1b")
+            session.expect("[N] New host")
+            session.send("k")
+            session.expect("Enter: load key and close skm")
+            visible = "".join(character for character in session.screen() if character.isalnum() or character in ":+/")
+            assert fingerprint in visible, "The full fingerprint was clipped at 60x18"
+            session.send("\x1b")
+            session.finish()
+        finally:
+            session.close()
+        for index in range(10):
+            (directory / f"broken-public-key-{index}.pub").write_text("not a public key")
+        session = Session(binary, [], env, tui=True, width=60, height=18)
+        try:
+            session.expect("[N] New host")
+            session.send("k")
+            session.expect("Enter: continue | Esc: quit")
+            session.send("\x1b[6~" * 20)
+            session.expect("broken-public-key-9")
+            assert "Enter: continue | Esc: quit" in session.screen()
+            session.send("\r")
+            session.expect("Enter: load key and close skm")
+            session.send("\x1b")
+            session.finish()
+        finally:
+            session.close()
+    print("PASS: resize confirmation guard, full minimum-size fingerprint, scrolling warnings, and pinned dialog instructions")
+
+
 if __name__ == "__main__":
     main()
+    audit_regressions(Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/skm").resolve())

@@ -7,7 +7,7 @@ use crate::tui::{
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Modifier,
-    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -59,7 +59,7 @@ impl HostPage {
             .highlight_symbol("> ");
             frame.render_stateful_widget(table, parts[1], &mut self.table);
         }
-        components::draw_actions(frame, parts[2], Page::Hosts, focus, action);
+        components::draw_actions(frame, parts[2], Page::Hosts, focus, action, false);
         if self.form.is_some() || self.deleting {
             let width = area.width.min(80);
             let height = area.height.min(18);
@@ -69,8 +69,8 @@ impl HostPage {
                 width,
                 height,
             );
-            frame.render_widget(Clear, popup);
-            let (title, text) = if let Some(form) = &self.form {
+
+            let (title, text, footer) = if let Some(form) = &self.form {
                 let mut lines = Vec::new();
                 for (i, label) in [
                     "Alias",
@@ -88,10 +88,8 @@ impl HostPage {
                         form.values[i]
                     ));
                 }
-                lines.push("\nTab/Up/Down: field | Ctrl+U: clear field".into());
-                lines.push("Enter: save | Esc: cancel".into());
                 lines.push("Leave blank to use your SSH settings and defaults.".into());
-                lines.push(format!("\n{}", self.message));
+                lines.push(format!("\n{}", self.message.text));
                 (
                     if form.index.is_some() {
                         " Edit SSH host "
@@ -99,27 +97,45 @@ impl HostPage {
                         " Add SSH host "
                     },
                     lines.join("\n"),
+                    "Tab/Up/Down: field | Ctrl+U: clear field\nEnter: save | Esc: cancel | PgUp/PgDn: scroll",
                 )
             } else {
                 let alias = &self.config.entries[self.table.selected().unwrap()]
                     .host
                     .alias;
-                (" Delete SSH host ", format!("Delete alias {alias} and its settings from ~/.ssh/config?\n\nA backup will be saved. No keys or server files will be deleted.\n\n{} Cancel\n{} Delete alias\n\nArrows: choose | Enter: confirm | Esc: cancel\nY: delete | N: cancel\n\n{}", if self.delete_selected { " " } else { ">" }, if self.delete_selected { ">" } else { " " }, self.message))
-            };
-            frame.render_widget(
-                Paragraph::new(components::dialog_text(&text, &self.message))
-                    .wrap(Wrap { trim: false })
-                    .block(
-                        Block::default()
-                            .title(title)
-                            .borders(Borders::ALL)
-                            .border_style(if self.deleting {
-                                Tone::Danger.style()
-                            } else {
-                                Tone::Accent.style()
-                            }),
+                (
+                    " Delete SSH host ",
+                    format!(
+                        "Delete alias {alias} and its settings from ~/.ssh/config?
+
+A backup will be saved. No keys or server files will be deleted.
+
+{} Cancel
+{} Delete alias
+
+{}",
+                        if self.delete_selected { " " } else { ">" },
+                        if self.delete_selected { ">" } else { " " },
+                        self.message.text
                     ),
+                    "Arrows: choose | Enter: confirm | Esc: cancel
+Y: delete | N: cancel | PgUp/PgDn: scroll",
+                )
+            };
+            components::draw_dialog(
+                frame,
                 popup,
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(if self.deleting {
+                        Tone::Danger.style()
+                    } else {
+                        Tone::Accent.style()
+                    }),
+                components::dialog_text(&text, &self.message),
+                footer,
+                &mut self.dialog_scroll,
             );
         }
     }

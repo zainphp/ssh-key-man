@@ -84,3 +84,7 @@ pub fn interactive(command: &mut Command, action: &str) -> Result<()> {
     }
     Ok(())
 }
+
+pub(crate) fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}

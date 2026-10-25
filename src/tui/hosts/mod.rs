@@ -3,7 +3,9 @@ mod tests;
 mod view;
 
 use crate::hosts::{Config, Host};
+use crate::theme::Tone;
 use crate::tui::{components, model::Action};
+use crate::tui::{notice::Notice, scroll::Scroll};
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
@@ -21,7 +23,8 @@ pub(super) struct HostPage {
     form: Option<HostForm>,
     deleting: bool,
     delete_selected: bool,
-    pub message: String,
+    pub message: Notice,
+    dialog_scroll: Scroll,
 }
 
 impl HostPage {
@@ -56,7 +59,8 @@ impl HostPage {
             form: None,
             deleting: false,
             delete_selected: false,
-            message: String::new(),
+            message: Notice::default(),
+            dialog_scroll: Scroll::default(),
         };
         hosts.update_selection();
         Ok(hosts)
@@ -76,16 +80,23 @@ impl HostPage {
         self.form = None;
         self.deleting = false;
         self.update_selection();
-        self.message = format!(
-            "{message}{}",
-            backup
-                .map(|p| format!(" Backup: {}", p.display()))
-                .unwrap_or_default()
+        self.message.set(
+            format!(
+                "{message}{}",
+                backup
+                    .map(|p| format!(" Backup: {}", p.display()))
+                    .unwrap_or_default()
+            ),
+            Tone::Success,
         );
         Ok(())
     }
 
     pub fn handle_key(&mut self, dir: &Path, event: KeyEvent) -> Result<()> {
+        if self.dialog_scroll.handle_key(event.code) {
+            return Ok(());
+        }
+        self.dialog_scroll.follow_focus();
         if let Some(form) = self.form.as_mut() {
             match event.code {
                 KeyCode::Esc => {
@@ -152,6 +163,8 @@ impl HostPage {
     }
 
     pub fn handle_action(&mut self, action: Action) -> Result<()> {
+        self.dialog_scroll = Scroll::default();
+        self.dialog_scroll.follow_focus();
         match action {
             Action::New => {
                 self.form = Some(HostForm {

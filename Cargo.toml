@@ -20,7 +20,7 @@ clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
 dirs = "6"
 libc = "0.2"
-ratatui = "0.29"
+ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }
 ssh-key = "0.6"
 walkdir = "2"
 which = "8"
