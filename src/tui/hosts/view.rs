@@ -19,17 +19,12 @@ impl HostPage {
             return;
         }
         let parts = Layout::vertical([
-            Constraint::Length(3),
+            Constraint::Length(components::HEADER_HEIGHT),
             Constraint::Min(3),
             Constraint::Length(2),
         ])
         .split(area);
-        frame.render_widget(
-            Paragraph::new("ssh-key-man | Hosts in ~/.ssh/config")
-                .block(Block::default().borders(Borders::BOTTOM)),
-            parts[0],
-        );
-        components::draw_tabs(frame, parts[0], Page::Hosts, focus);
+        components::draw_header(frame, parts[0], Page::Hosts, focus);
         if self.config.entries.is_empty() {
             frame.render_widget(Paragraph::new("No host aliases found. Press N to add one.\nSave a hostname, user, port, and key so you can connect with ssh <alias>.").wrap(Wrap { trim: false }), parts[1]);
         } else {

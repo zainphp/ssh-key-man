@@ -1,8 +1,8 @@
 use super::model::{Action, Focus, Page};
-use crate::theme::Tone;
+use crate::theme::{color_style, Tone};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, TableState, Tabs, Wrap},
     Frame,
@@ -39,15 +39,54 @@ pub(super) fn move_selection(table: &mut TableState, count: usize, down: bool) -
     next != previous
 }
 
-pub(super) fn draw_tabs(frame: &mut Frame, header: Rect, page: Page, focus: Focus) {
-    let row = Rect::new(header.x, header.y + 1, header.width, 1);
+pub(super) const HEADER_HEIGHT: u16 = 7;
+const WORDMARK: &str = r" __   __  |  |      | /   ___ \  /      |\/|  /\  |\ |
+(__  (__  |__|  --  |<   |__   \/   --  |  | /__\ | \|
+ __)  __) |  |      | \  |___  /        |  | |  | |  |";
+
+pub(super) fn draw_header(frame: &mut Frame, header: Rect, page: Page, focus: Focus) {
+    let header = Rect::new(
+        header.x,
+        header.y,
+        header.width,
+        header.height.saturating_sub(1),
+    );
+    let wordmark: Vec<Line> = WORDMARK
+        .lines()
+        .map(|row| {
+            let (ssh, rest) = row.split_at(20);
+            let (key, man) = rest.split_at(20);
+            Line::from(vec![
+                Span::styled(ssh, color_style(Color::LightCyan)),
+                Span::styled(key, color_style(Color::Cyan)),
+                Span::styled(man, color_style(Color::LightBlue)),
+            ])
+        })
+        .collect();
+    frame.render_widget(
+        Paragraph::new(wordmark)
+            .style(Style::default().add_modifier(Modifier::BOLD))
+            .block(Block::default().borders(Borders::BOTTOM)),
+        header,
+    );
+    let row = Rect::new(
+        header.x,
+        header.y + header.height.saturating_sub(2),
+        header.width,
+        1,
+    );
+    let version = concat!("v", env!("CARGO_PKG_VERSION"));
+    let columns =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(version.len() as u16)])
+            .split(row);
     frame.render_widget(
         Tabs::new(["[H] Hosts", "[K] Keys"])
             .style(Tone::Accent.style())
             .select(page.index())
             .highlight_style(selection_style(focus == Focus::Pages)),
-        row,
+        columns[0],
     );
+    frame.render_widget(Paragraph::new(version), columns[1]);
 }
 
 pub(super) fn draw_actions(frame: &mut Frame, area: Rect, page: Page, focus: Focus, action: usize) {

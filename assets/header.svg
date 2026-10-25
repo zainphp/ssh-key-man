@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img" aria-labelledby="title description">
+  <title id="title">ssh-key-man</title>
+  <desc id="description">A key mark beside the ssh-key-man name. SSH keys, hosts, and agent.</desc>
+  <rect width="960" height="220" rx="12" fill="#101b21"/>
+  <g fill="none" stroke="#74ded4" stroke-width="5" stroke-linecap="square">
+    <circle cx="76" cy="94" r="17"/>
+    <path d="M93 94h49m-13 0v14m-16-14v9"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Consolas, monospace">
+    <text x="174" y="107" fill="#edf4f3" font-size="44" font-weight="700" letter-spacing="-1">ssh-key-man</text>
+    <text x="176" y="146" fill="#b4c8cc" font-size="18">SSH keys, hosts, and agent.</text>
+    <text x="876" y="57" fill="#74ded4" font-size="16" text-anchor="end">skm</text>
+  </g>
+  <path d="M60 181h840" stroke="#36515c"/>
+</svg>

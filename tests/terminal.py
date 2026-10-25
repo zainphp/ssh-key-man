@@ -188,11 +188,11 @@ def main():
             ssh_stub.chmod(0o700)
             hosts = Session(binary, ["hosts"], remote_env, tui=True)
             try:
-                hosts.expect("Hosts in ~/.ssh/config")
+                hosts.expect("[N] New host")
                 hosts.send("K")
                 hosts.expect("[N] New key")
                 hosts.send("H")
-                hosts.expect("Hosts in ~/.ssh/config")
+                hosts.expect("[N] New host")
                 hosts.send("\x1b[B\x1b[B")
                 hosts.expect("Enter: run action")
                 hosts.send("\r")
@@ -235,7 +235,7 @@ def main():
                     connection.close()
             hosts = Session(binary, ["hosts"], env, tui=True)
             try:
-                hosts.expect("Hosts in ~/.ssh/config")
+                hosts.expect("[N] New host")
                 hosts.send("d")
                 hosts.expect("Delete SSH host")
                 hosts.send("\r")
@@ -256,7 +256,7 @@ def main():
                 hosts.close()
             tui = Session(binary, [], env, tui=True)
             try:
-                tui.expect("Hosts in ~/.ssh/config")
+                tui.expect("[N] New host")
                 tui.send("\t")
                 tui.send("\x1b[D")
                 tui.expect("Enter: load key and close skm")
@@ -264,7 +264,7 @@ def main():
                 assert " Status " not in tui.screen()
                 assert "Esc: quit" not in tui.screen()
                 tui.send("\x1b[C")
-                tui.expect("Hosts in ~/.ssh/config")
+                tui.expect("[N] New host")
                 tui.send("n")
                 tui.expect("Add SSH host")
                 tui.send("\x1b")
@@ -315,7 +315,7 @@ def main():
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(home / ".ssh/id_00_unloaded")], check=True)
             load = Session(binary, [], env, tui=True)
             try:
-                load.expect("Hosts in ~/.ssh/config")
+                load.expect("[N] New host")
                 load.send("K")
                 load.expect("Enter: load key and close skm")
                 load.send("\r")
@@ -330,7 +330,7 @@ def main():
             (home / ".ssh/id_00_unloaded").chmod(0o644)
             failed_load = Session(binary, [], env, tui=True)
             try:
-                failed_load.expect("Hosts in ~/.ssh/config")
+                failed_load.expect("[N] New host")
                 failed_load.send("K")
                 failed_load.expect("Enter: load key and close skm")
                 failed_load.send("\r")

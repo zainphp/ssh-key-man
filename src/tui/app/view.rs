@@ -1,7 +1,7 @@
 use super::App;
 use crate::theme::Tone;
 use crate::tui::{
-    components::{draw_actions, draw_notice, draw_tabs, selection_style},
+    components::{draw_actions, draw_header, draw_notice, selection_style, HEADER_HEIGHT},
     model::{Focus, Page},
 };
 use ratatui::{
@@ -32,24 +32,12 @@ impl App {
             return;
         }
         let areas = Layout::vertical([
-            Constraint::Length(3),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(4),
             Constraint::Length(2),
         ])
         .split(area);
-        let status = if let Some(agent) = &self.agent {
-            format!(
-                "ssh-key-man | Agent ready | {} loaded",
-                agent.fingerprints.len()
-            )
-        } else {
-            "ssh-key-man | No active agent connection".into()
-        };
-        frame.render_widget(
-            Paragraph::new(status).block(Block::default().borders(Borders::BOTTOM)),
-            areas[0],
-        );
-        draw_tabs(frame, areas[0], Page::Keys, self.focus);
+        draw_header(frame, areas[0], Page::Keys, self.focus);
         let sections = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(areas[1]);
         if self.keys.is_empty() {

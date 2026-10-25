@@ -181,15 +181,24 @@ fn both_tabs_are_visible_and_active_tab_is_highlighted() {
     for active in ["Keys", "Hosts"] {
         terminal.draw(|f| app.draw(f)).unwrap();
         let buffer = terminal.backend().buffer();
-        let row: String = (0..80).map(|x| buffer[(x, 1)].symbol()).collect();
+        let row: String = (0..80)
+            .map(|x| buffer[(x, crate::tui::components::HEADER_HEIGHT - 3)].symbol())
+            .collect();
         assert!(
             row.contains("Keys")
                 && row.contains("Hosts")
                 && !row.contains("Left/Right")
                 && !row.contains("Esc:")
         );
+        assert!(row.ends_with(concat!("v", env!("CARGO_PKG_VERSION"))));
+        let gutter: String = (0..80)
+            .map(|x| buffer[(x, crate::tui::components::HEADER_HEIGHT - 1)].symbol())
+            .collect();
+        assert!(gutter.trim().is_empty());
         let column = row.find(active).unwrap() as u16;
-        assert!(buffer[(column, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(column, crate::tui::components::HEADER_HEIGHT - 3)]
+            .modifier
+            .contains(Modifier::REVERSED));
         app.handle_key(press(KeyCode::Right)).unwrap();
     }
 }

@@ -33,10 +33,7 @@ impl Tone {
     }
 
     pub(crate) fn style(self) -> Style {
-        if !enabled(true) {
-            return Style::default();
-        }
-        Style::default().fg(self.colors().0)
+        color_style(self.colors().0)
     }
 
     pub(crate) fn stdout(self, text: &str) -> StyledContent<&str> {
@@ -53,6 +50,14 @@ impl Tone {
             style.foreground_color = Some(self.colors().1);
         }
         style.apply(text)
+    }
+}
+
+pub(crate) fn color_style(color: Color) -> Style {
+    if enabled(true) {
+        Style::default().fg(color)
+    } else {
+        Style::default()
     }
 }
 

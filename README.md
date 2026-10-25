@@ -1,4 +1,4 @@
-# ssh-key-man
+![ssh-key-man: SSH keys, hosts, and agent.](assets/header.svg)
 
 Create SSH keys, manage host aliases, add public keys to servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
 
