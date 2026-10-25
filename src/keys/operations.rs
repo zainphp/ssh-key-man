@@ -61,7 +61,7 @@ pub fn delete(dir: &Path, key: &Key) -> Result<()> {
     if key.private {
         crate::agent::unload(dir, &public)?;
     }
-    fs::remove_file(&key.path).with_context(|| format!("Could not delete {}. Check folder permissions. If the key was unloaded, load it again with skm load <filename> if needed.", key.path.display()))?;
+    fs::remove_file(&key.path).with_context(|| format!("Could not delete {}. Check folder permissions. If the key was unloaded, load it again with {} if needed.", key.path.display(), load_retry(key)))?;
     if has_companion {
         fs::remove_file(&companion).with_context(|| format!("The private key was deleted, but {} could not be removed. Check folder permissions and remove this public key file manually.", companion.display()))?;
     }
@@ -176,10 +176,33 @@ pub fn deploy(key: &Key, remote: &str, port: u16) -> Result<()> {
     {
         bail!("The public key path contains characters ssh-copy-id cannot safely handle: {}. Move the key to a path without double quotes, dollar signs, backticks, backslashes, or control characters.", public.display());
     }
-    let mut command = process::command("ssh-copy-id")?;
-    command
-        .arg("-i")
-        .arg(public)
-        .args(["-p", &port.to_string(), remote]);
-    process::interactive(&mut command, "add the public key to the server")
+    (|| {
+        let mut command = process::command("ssh-copy-id")?;
+        command
+            .arg("-i")
+            .arg(public)
+            .args(["-p", &port.to_string(), remote]);
+        process::interactive(&mut command, "add the public key to the server")
+    })()
+    .with_context(|| {
+        format!(
+            "Remote setup did not finish. Retry with {}.",
+            deployment_retry(key, remote, port)
+        )
+    })
+}
+
+pub(crate) fn deployment_retry(key: &Key, remote: &str, port: u16) -> String {
+    format!(
+        "ssh-copy-id -i {} -p {port} {}",
+        process::shell_quote(&public_path(&key.path).to_string_lossy()),
+        process::shell_quote(remote)
+    )
+}
+
+pub(crate) fn load_retry(key: &Key) -> String {
+    format!(
+        "skm load {}",
+        process::shell_quote(&key.path.file_name().unwrap_or_default().to_string_lossy())
+    )
 }

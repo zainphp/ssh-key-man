@@ -1,4 +1,5 @@
 mod operations;
+mod refresh;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -7,16 +8,20 @@ use super::{
     components::{clamp_selection, move_selection},
     hosts::HostPage,
     model::{Action, Focus, InputResult, Operation, Page},
+    notice::Notice,
+    scroll::Scroll,
     wizard::{DialogResult, KeyWizard},
 };
+use crate::theme::Tone;
 use crate::{
     agent::{self, Agent},
     keys::{self, Key},
 };
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::widgets::TableState;
+use ratatui::{layout::Rect, widgets::TableState};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 
 pub(super) struct App {
     directory: PathBuf,
@@ -28,7 +33,11 @@ pub(super) struct App {
     agent: Option<Agent>,
     key_selection: TableState,
     wizard: Option<KeyWizard>,
-    message: String,
+    message: Notice,
+    detail_scroll: Scroll,
+    dialog_scroll: Scroll,
+    viewport: Rect,
+    refresh: Option<Receiver<Result<refresh::Snapshot>>>,
 }
 
 impl App {
@@ -43,25 +52,16 @@ impl App {
             agent: None,
             key_selection: TableState::default(),
             wizard: None,
-            message: String::new(),
+            message: Notice::default(),
+            detail_scroll: Scroll::default(),
+            dialog_scroll: Scroll::default(),
+            viewport: Rect::new(0, 0, 60, 18),
+            refresh: None,
         })
     }
 
-    fn refresh_keys(&mut self) -> Result<()> {
-        let mut inventory = keys::inventory(&self.directory)?;
-        self.keys = inventory.keys;
-        self.agent = match agent::current(&self.directory) {
-            Ok(agent) => agent,
-            Err(error) => {
-                inventory.warnings.push(format!("{error:#}"));
-                None
-            }
-        };
-        if !inventory.warnings.is_empty() {
-            self.message = inventory.warnings.join("\n");
-        }
-        clamp_selection(&mut self.key_selection, self.keys.len());
-        Ok(())
+    pub fn resize(&mut self, area: Rect) {
+        self.viewport = area;
     }
 
     fn select_page(&mut self, page: Page) -> Result<()> {
@@ -69,7 +69,8 @@ impl App {
         match page {
             Page::Keys => {
                 self.page = page;
-                self.refresh_keys()?;
+                self.detail_scroll = Scroll::default();
+                self.refresh_keys();
             }
             Page::Hosts => {
                 if self.page != page {
@@ -81,7 +82,7 @@ impl App {
         Ok(())
     }
 
-    pub fn notice_mut(&mut self) -> &mut String {
+    pub fn notice_mut(&mut self) -> &mut Notice {
         match self.page {
             Page::Hosts => &mut self.hosts.message,
             Page::Keys => &mut self.message,
@@ -92,8 +93,22 @@ impl App {
         if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(InputResult::Quit);
         }
+        if self.viewport.width < 60
+            || self.viewport.height < 18
+            || (self.page == Page::Keys && self.refresh.is_some())
+        {
+            return Ok(if event.code == KeyCode::Esc {
+                InputResult::Quit
+            } else {
+                InputResult::Continue
+            });
+        }
         if self.page == Page::Keys {
             if let Some(wizard) = &mut self.wizard {
+                if self.dialog_scroll.handle_key(event.code) {
+                    return Ok(InputResult::Continue);
+                }
+                self.dialog_scroll.follow_focus();
                 return Ok(match wizard.handle_key(event, &mut self.message)? {
                     DialogResult::Continue => InputResult::Continue,
                     DialogResult::Cancel => {
@@ -105,7 +120,7 @@ impl App {
             }
         } else if self.hosts.is_editing() {
             if let Err(error) = self.hosts.handle_key(&self.directory, event) {
-                self.hosts.message = format!("{error:#}");
+                self.hosts.message.set(format!("{error:#}"), Tone::Danger);
             }
             return Ok(InputResult::Continue);
         }
@@ -114,9 +129,13 @@ impl App {
         }
         let notice = self.notice_mut();
         if !notice.is_empty() {
-            if event.code == KeyCode::Enter {
-                notice.clear();
-            }
+            notice.handle_key(event.code);
+            return Ok(InputResult::Continue);
+        }
+        if self.page == Page::Keys
+            && self.focus == Focus::List
+            && self.detail_scroll.handle_key(event.code)
+        {
             return Ok(InputResult::Continue);
         }
         match event.code {
@@ -148,6 +167,7 @@ impl App {
                     Page::Hosts => self.hosts.move_selection(down),
                     Page::Keys => move_selection(&mut self.key_selection, self.keys.len(), down),
                 };
+                self.detail_scroll = Scroll::default();
                 if !moved {
                     self.focus = if down { Focus::Actions } else { Focus::Pages };
                 }
@@ -185,13 +205,18 @@ impl App {
             (Focus::List, KeyCode::Enter) => match self.page {
                 Page::Hosts => match self.hosts.connection_alias() {
                     Ok(alias) => return Ok(InputResult::Run(Operation::Connect(alias))),
-                    Err(error) => self.hosts.message = format!("{error:#}"),
+                    Err(error) => self.hosts.message.set(format!("{error:#}"), Tone::Danger),
                 },
                 Page::Keys => {
                     if let Some(key) = self.selected_key() {
-                        return Ok(InputResult::Run(Operation::Load(key.clone())));
+                        if key.private {
+                            return Ok(InputResult::Run(Operation::Load(key.clone())));
+                        }
+                        self.message.set("This is a public key only. Select its matching private key to load it.", Tone::Warning);
+                    } else {
+                        self.message
+                            .set("No key selected. Press N to create a key.", Tone::Warning);
                     }
-                    self.message = "No key selected. Press N to create a key.".into();
                 }
             },
             _ => {}
@@ -209,7 +234,7 @@ impl App {
         match self.page {
             Page::Hosts => {
                 if let Err(error) = self.hosts.handle_action(action) {
-                    self.hosts.message = format!("{error:#}");
+                    self.hosts.message.set(format!("{error:#}"), Tone::Danger);
                 }
             }
             Page::Keys => {
@@ -223,6 +248,8 @@ impl App {
                     Action::Edit => return Ok(InputResult::Continue),
                 };
                 self.message.clear();
+                self.dialog_scroll = Scroll::default();
+                self.dialog_scroll.follow_focus();
             }
         }
         Ok(InputResult::Continue)

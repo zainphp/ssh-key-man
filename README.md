@@ -2,6 +2,8 @@
 
 Create SSH keys, manage host aliases, add public keys to servers, and manage your SSH agent from a CLI or a keyboard-driven terminal interface. Both `ssh-key-man` and `skm` run the same application.
 
+## Installation
+
 Install or update on Linux, macOS, or WSL (Intel or ARM64):
 
 ```sh
@@ -9,6 +11,8 @@ curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh
 ```
 
 The installer downloads a prebuilt GitHub release, verifies its SHA256 checksum, and installs `ssh-key-man` and the `skm` alias in `~/.local/bin`. Rust is not required. Add that directory to `PATH` if the installer asks. It does not use sudo, install system packages, or edit shell files.
+
+## Updates
 
 Update an existing installation with:
 
@@ -24,7 +28,11 @@ To choose a folder or a specific release:
 curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | SKM_INSTALL_DIR="$HOME/.local/bin" SKM_VERSION=v0.1.0 sh
 ```
 
+## Requirements
+
 Requires OpenSSH's `ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, and `ssh-copy-id` in `PATH`. Debian/Ubuntu users can install `openssh-client`; macOS users can use the system OpenSSH commands and install `ssh-copy-id` separately (`brew install ssh-copy-id`). Native Windows is not supported; use WSL.
+
+### Build from source
 
 To build from source, install the current stable Rust toolchain and a C linker (Debian/Ubuntu: `build-essential`; macOS: Command Line Tools), then run:
 
@@ -34,11 +42,15 @@ skm --help
 skm
 ```
 
+## TUI navigation
+
 Running without a subcommand opens the Hosts page. K opens Keys and H opens Hosts. Up/Down selects a list item, and Left/Right switches pages directly while an item is selected. From the first item, Up focuses the page tabs; from the last item, Down focuses the actions. In either picker, Left/Right chooses an option and Enter activates it. N creates a new host or key on the current page. Enter loads the selected key; D deletes its local files after confirmation. E/D edit or delete a host. Each page keeps its selection. The main screens show only the tabs, action shortcuts, and Enter's action; navigation instructions are documented here rather than repeated in the TUI.
 
 Esc quits from a page. In a form or confirmation, Esc cancels that step. Tab does not switch pages; it remains available for moving between form fields, alongside Up/Down. Key creation, server setup, and deletion choices also support arrow keys. Delete confirmations select Cancel by default.
 
-The Keys page has a key list and selected-key details. Results, warnings, and errors appear only when needed in a message popup: Enter dismisses it and Esc quits. There is no persistent Status section. Pressing Enter on a selected key closes the TUI and loads the key into the SSH agent; pressing Enter on a host closes the TUI and starts SSH in the current terminal. The TUI does not reopen after either action, including a failed load or connection. Resize a small terminal to at least 60 columns and 18 rows.
+The Keys page has a key list and selected-key details. Results, warnings, and errors appear only when needed in a message popup: Enter dismisses it and Esc quits. There is no persistent Status section. Pressing Enter on a selected key closes the TUI and loads the key into the SSH agent; pressing Enter on a host closes the TUI and starts SSH in the current terminal. The TUI does not reopen after either valid action, including a failed load or connection. Selecting a public-only key shows the matching-private-key requirement without leaving the TUI. Resize a small terminal to at least 60 columns and 18 rows. Actions are suspended below that size. PgUp/PgDn scroll overflowing key details and dialogs; message popups also accept Up/Down. Dialog instructions stay visible while scrolling. Agent checks run in the background with a busy message, and Esc remains available to quit.
+
+## CLI commands
 
 ```sh
 skm update              # Install the latest release
@@ -49,6 +61,8 @@ skm load                # Load all discovered private keys
 skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
 skm init zsh            # Print shell configuration (bash and fish also supported)
 ```
+
+## Host aliases
 
 Open the Hosts page with H or the arrow-key page picker, or run `skm hosts` directly to manage `~/.ssh/config`. Press Enter on a selected alias to open an SSH session in the current terminal. The app exits when the SSH session ends. Press N to add an alias, E to edit or rename the selected alias, and D to delete it after confirmation. Up/Down or Tab moves between alias, hostname, user, port, and key file; Ctrl+U clears a field. Enter saves and Escape cancels. Leave optional fields blank to use your SSH settings and defaults. Key paths such as `~/.ssh/id_ed25519` and paths containing spaces are supported.
 
@@ -63,11 +77,15 @@ The editor preserves other blocks, comments, and extra options such as `ProxyJum
 
 Only single-alias blocks with one value per managed setting can be edited or deleted here. Wildcards, multi-alias blocks, and repeated settings are read-only. `Match` sections and `Include` directives are preserved; included files are not opened or expanded. Symlinked config files must be edited directly. Values shown are the settings written in each block, not the effective settings after all SSH rules. Existing earlier rules can take priority; use `ssh -G work` to inspect the effective settings. New aliases go before existing rules, with a scope reset when needed to preserve global defaults for other hosts.
 
+## Keys and server setup
+
 On the Keys page, D opens Delete with Cancel selected by default. Confirm deletion to permanently remove the selected private key and its matching public key file, if present. A public-only selection removes only that public key file. Files are checked against the selected fingerprint before removal; changed files, symlinks, and mismatched public keys are kept. A loaded private key is also removed from the current responding SSH agent before its files are deleted. Other agents, host aliases, and keys already added to servers are unchanged. There is no undo for deleted key files.
 
 Generation supports Ed25519 (default) and RSA 4096. Choose a filename in `~/.ssh/`. Existing private or public files are never overwritten. OpenSSH asks for an optional passphrase using its own hidden terminal prompt; the application never accepts a passphrase argument. The TUI temporarily returns to the normal terminal for passphrase and server login prompts.
 
 After creating a key, choose whether to add its public key on `user@hostname`, with an optional port. `ssh-copy-id` handles login, permissions, and duplicate public keys on the server. Verify the server's host fingerprint against a trusted source when SSH asks. The app preserves your OpenSSH configuration and host verification settings. It never sends a private key to the server. The saved key is loaded into the agent even if adding the public key to the server fails. Adding a public key to a server needs password login or another working authentication method; it cannot bypass server policy.
+
+## Agent and shell setup
 
 Add this line to `~/.zshrc` or `~/.bashrc`:
 
@@ -87,11 +105,13 @@ Loading a key finds or starts an SSH agent and creates the link automatically. U
 
 Agent selection checks `SSH_AUTH_SOCK`, then the stable link, then `/tmp/ssh-*/agent.*` (and the system temporary directory on macOS), before starting `ssh-agent`. Each socket must belong to the current user and answer `ssh-add`. Probes time out after three seconds. Multiple instances serialize socket updates with a file lock. A regular file at `~/.ssh/agent.sock` is never replaced. The stable link follows whichever verified agent was selected, including a forwarded agent if that is your active `SSH_AUTH_SOCK`.
 
+## Troubleshooting and key files
+
 The key table shows OpenSSH private keys, including encrypted keys, and standalone `.pub` files. SHA256 fingerprints identify loaded keys without comparing comments or filenames. Public-only keys can be inspected but cannot be loaded. Private keys must be regular files owned by you with permissions 600 (or stricter). Symlinked keys are not followed. Legacy PEM keys are reported with conversion instructions; convert them with `ssh-keygen -p -o -f <filename>` before loading them through this tool. Keep `~/.ssh/` owned by you and not writable by other users.
 
 Do not delete a `.skm-key-*` directory left by an interrupted generation until you have checked for a generated private key inside it. A successful generation removes its staging directory. If adding the public key fails, retry manually with `ssh-copy-id -i ~/.ssh/<filename>.pub -p 22 user@hostname`; if agent loading fails, use `skm load <filename>`.
 
-Code layout:
+## Code layout
 
 - [`src/cli/`](src/cli/) defines commands and interactive prompts; [`src/commands.rs`](src/commands.rs) runs CLI workflows.
 - [`src/tui/mod.rs`](src/tui/mod.rs) runs the event loop; [`src/tui/terminal.rs`](src/tui/terminal.rs) owns terminal setup and cleanup.
@@ -100,7 +120,7 @@ Code layout:
 - [`src/hosts/`](src/hosts/) separates SSH config editing, parsing, and safe file writes. [`src/keys/`](src/keys/) separates key discovery from key operations.
 - [`src/agent.rs`](src/agent.rs) manages agents; [`src/process.rs`](src/process.rs) runs OpenSSH commands. The split modules keep unit tests in adjacent `tests.rs` files; integration and terminal tests live in [`tests/`](tests/).
 
-Development checks:
+## Development checks
 
 ```sh
 cargo fmt --all -- --check
@@ -112,7 +132,10 @@ cargo build --release --locked
 
 Integration tests require OpenSSH. They create disposable keys, including an encrypted key, and isolated temporary agents. They check actual fingerprints, duplicate prevention, socket links, file permissions, mismatched public keys, both binary names, and shell output. Tests never add a key to a remote server. CI runs these checks on Linux and macOS.
 
-Text colors highlight actions, loaded keys, warnings, and errors. Set `NO_COLOR=1` to disable colors. CLI output stays plain when redirected; `skm init` always prints plain shell configuration.
+## Colors
 
+The TUI uses a dark background with explicit, contrast-tested text colors. CLI color labels use the same foreground/background pairs. Colors highlight actions, loaded keys, warnings, and errors. Set `NO_COLOR=1` to disable colors. CLI output stays plain when redirected; `skm init` always prints plain shell configuration.
+
+## Releases
 
 Releases are published by [release.yml](.github/workflows/release.yml). Set the package version in `Cargo.toml`, update `Cargo.lock`, then push a matching tag such as `v0.1.0`. The workflow runs CI, builds Linux musl and macOS binaries for x86_64 and ARM64, and publishes archives with SHA256 checksum files. Tags containing a hyphen publish a prerelease; the default installer uses the latest stable release. Test the installer locally with `python3 tests/install.py target/debug/skm` after building the binary.

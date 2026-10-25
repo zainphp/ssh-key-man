@@ -2,6 +2,8 @@ mod app;
 mod components;
 mod hosts;
 mod model;
+mod notice;
+mod scroll;
 mod terminal;
 mod wizard;
 
@@ -22,6 +24,7 @@ pub fn run(directory: &Path) -> Result<()> {
     let mut screen = TerminalSession::default();
     let mut terminal = screen.enter()?;
     loop {
+        app.poll_refresh();
         terminal.draw(|frame| app.draw(frame))?;
         if !event::poll(Duration::from_millis(250))? {
             continue;
@@ -32,6 +35,8 @@ pub fn run(directory: &Path) -> Result<()> {
         if key.kind != KeyEventKind::Press {
             continue;
         }
+        let size = terminal.size()?;
+        app.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height));
         match app.handle_key(key) {
             Ok(InputResult::Quit) => break,
             Ok(InputResult::Run(operation)) => {
@@ -42,7 +47,9 @@ pub fn run(directory: &Path) -> Result<()> {
                 terminal = screen.enter()?;
             }
             Ok(InputResult::Continue) => {}
-            Err(error) => *app.notice_mut() = format!("{error:#}"),
+            Err(error) => app
+                .notice_mut()
+                .set(format!("{error:#}"), crate::theme::Tone::Danger),
         }
     }
     Ok(())

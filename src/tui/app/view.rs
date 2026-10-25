@@ -1,7 +1,7 @@
 use super::App;
 use crate::theme::Tone;
 use crate::tui::{
-    components::{draw_actions, draw_header, draw_notice, selection_style, HEADER_HEIGHT},
+    components::{draw_actions, draw_header, selection_style, HEADER_HEIGHT},
     model::{Focus, Page},
 };
 use ratatui::{
@@ -14,22 +14,18 @@ use ratatui::{
 
 impl App {
     pub fn draw(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        self.resize(area);
+        frame.render_widget(Block::default().style(crate::theme::base_style()), area);
+        if area.width < 60 || area.height < 18 {
+            frame.render_widget(Paragraph::new("Make the terminal at least 60 columns wide and 18 rows tall. Press Esc to quit.").wrap(Wrap { trim: false }), area);
+            return;
+        }
         if self.page == Page::Hosts {
             self.hosts.draw(frame, self.focus, self.action_index);
             if !self.hosts.is_editing() && !self.hosts.message.is_empty() {
-                draw_notice(frame, &self.hosts.message);
+                self.hosts.message.draw(frame);
             }
-            return;
-        }
-        let area = frame.area();
-        if area.width < 60 || area.height < 18 {
-            frame.render_widget(
-                Paragraph::new(
-                    "Make the terminal at least 60 columns wide and 18 rows tall. Press Esc to quit.",
-                )
-                .wrap(Wrap { trim: false }),
-                area,
-            );
             return;
         }
         let areas = Layout::vertical([
@@ -39,6 +35,17 @@ impl App {
         ])
         .split(area);
         draw_header(frame, areas[0], Page::Keys, self.focus);
+        if self.refresh.is_some() {
+            frame.render_widget(
+                Paragraph::new(
+                    "Reading keys and checking the SSH agent...
+Esc: quit",
+                )
+                .wrap(Wrap { trim: false }),
+                areas[1],
+            );
+            return;
+        }
         let sections = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(areas[1]);
         let is_loaded = |key: &crate::keys::Key| {
@@ -89,14 +96,15 @@ impl App {
                 } else {
                     ("Not loaded", Tone::Warning)
                 };
+                let path = key
+                    .path
+                    .strip_prefix(&self.directory)
+                    .map(|name| format!("~/.ssh/{}", name.display()))
+                    .unwrap_or_else(|_| key.path.display().to_string());
                 Text::from(vec![
                     Line::from(vec![
                         Span::styled("Status: ", Tone::Accent.style()),
                         Span::styled(status, tone.style()),
-                    ]),
-                    Line::from(vec![
-                        Span::styled("File: ", Tone::Accent.style()),
-                        Span::raw(key.path.display().to_string()),
                     ]),
                     Line::from(vec![
                         Span::styled("Key type: ", Tone::Accent.style()),
@@ -106,23 +114,36 @@ impl App {
                         Span::styled("Fingerprint: ", Tone::Accent.style()),
                         Span::raw(key.fingerprint.as_str()),
                     ]),
+                    Line::from(vec![
+                        Span::styled("File: ", Tone::Accent.style()),
+                        Span::raw(path),
+                    ]),
                 ])
             })
             .unwrap_or_else(|| Text::from("Select a key to see its key type and fingerprint."));
-        frame.render_widget(
-            Paragraph::new(details).wrap(Wrap { trim: false }).block(
-                Block::default()
-                    .title(" Key details ")
-                    .borders(Borders::ALL),
-            ),
-            sections[1],
+        let mut block = Block::default()
+            .title(" Key details ")
+            .borders(Borders::ALL);
+        let inner = block.inner(sections[1]);
+        let overflowing = self.detail_scroll.draw(frame, inner, details);
+        if overflowing {
+            block = block.title_bottom(" PgUp/PgDn: scroll ");
+        }
+        frame.render_widget(block, sections[1]);
+        let public_only = self.selected_key().is_some_and(|key| !key.private);
+        draw_actions(
+            frame,
+            areas[2],
+            Page::Keys,
+            self.focus,
+            self.action_index,
+            public_only,
         );
-        draw_actions(frame, areas[2], Page::Keys, self.focus, self.action_index);
         if self.wizard.is_none() && !self.message.is_empty() {
-            draw_notice(frame, &self.message);
+            self.message.draw(frame);
         }
         if let Some(wizard) = &self.wizard {
-            wizard.draw(frame, &self.message);
+            wizard.draw(frame, &self.message, &mut self.dialog_scroll);
         }
     }
 }

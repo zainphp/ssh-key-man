@@ -49,3 +49,37 @@ fn refuses_existing_keys_without_running_keygen() {
         "keep"
     );
 }
+
+#[test]
+fn recovery_commands_keep_shell_quoted_paths_and_custom_ports() {
+    let key = Key {
+        path: std::path::PathBuf::from("/home/alice's laptop/.ssh/work key"),
+        algorithm: "ssh-ed25519".into(),
+        fingerprint: "SHA256:fixture".into(),
+        private: true,
+    };
+    let command = super::operations::deployment_retry(&key, "alice@example.com", 65002);
+    let output = std::process::Command::new("sh")
+        .args(["-c", &format!("set -- {command}; printf '%s\\0' \"$@\"")])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let arguments: Vec<_> = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).into_owned())
+        .collect();
+    assert_eq!(
+        arguments,
+        [
+            "ssh-copy-id",
+            "-i",
+            "/home/alice's laptop/.ssh/work key.pub",
+            "-p",
+            "65002",
+            "alice@example.com"
+        ]
+    );
+    assert_eq!(super::operations::load_retry(&key), "skm load 'work key'");
+}

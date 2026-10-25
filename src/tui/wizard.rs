@@ -1,12 +1,16 @@
-use super::{components::dialog_text, model::Operation};
+use super::{
+    components::{dialog_text, draw_dialog},
+    model::Operation,
+    notice::Notice,
+    scroll::Scroll,
+};
 use crate::keys::{self, Key};
 use crate::theme::Tone;
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
-    style::Modifier,
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders},
     Frame,
 };
 use std::path::Path;
@@ -65,7 +69,7 @@ impl KeyWizard {
         }
     }
 
-    pub fn handle_key(&mut self, event: KeyEvent, message: &mut String) -> Result<DialogResult> {
+    pub fn handle_key(&mut self, event: KeyEvent, message: &mut Notice) -> Result<DialogResult> {
         match self {
             Self::Delete { key, confirm } => match event.code {
                 KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
@@ -177,12 +181,12 @@ impl KeyWizard {
         Ok(DialogResult::Continue)
     }
 
-    pub fn draw(&self, frame: &mut Frame, message: &str) {
+    pub fn draw(&self, frame: &mut Frame, notice: &Notice, scroll: &mut Scroll) {
         let area = frame.area();
         let height = if matches!(self, Self::Delete { .. }) {
             20
         } else {
-            16
+            18
         };
         let popup = Rect::new(
             area.x + area.width.saturating_sub(76) / 2,
@@ -190,36 +194,106 @@ impl KeyWizard {
             area.width.min(76),
             area.height.min(height),
         );
-        frame.render_widget(Clear, popup);
-        let (title, text) = match self {
+        let message = &notice.text;
+        let (title, text, footer) = match self {
             Self::Delete { key, confirm } => {
                 let files = if key.private {
-                    format!("Private key: {}\nPublic key: {} (if present)\n\nAlso unloads the key from the current agent, if available.", key.path.display(), keys::public_path(&key.path).display())
-                } else { format!("Public key: {}", key.path.display()) };
-                (" Delete key ", format!("{files}\n\nThis cannot be undone. Keys added to servers stay there.\n\n{} Cancel\n{} Delete files\n\nEnter: confirm | Esc: cancel", if *confirm { " " } else { ">" }, if *confirm { ">" } else { " " }))
+                    format!(
+                        "Private key: {}
+Public key: {} (if present)
+
+Also unloads the key from the current agent, if available.",
+                        key.path.display(),
+                        keys::public_path(&key.path).display()
+                    )
+                } else {
+                    format!("Public key: {}", key.path.display())
+                };
+                (
+                    " Delete key ",
+                    format!(
+                        "{files}
+
+This cannot be undone. Keys added to servers stay there.
+
+{} Cancel
+{} Delete files",
+                        if *confirm { " " } else { ">" },
+                        if *confirm { ">" } else { " " }
+                    ),
+                    "Arrows: choose | Enter: confirm | Esc: cancel
+PgUp/PgDn: scroll",
+                )
             }
-            Self::Parameters(form) => (" Create key: step 1 of 3 ", format!("{} Key type: {}\n\n{} Filename: {}\n\nA passphrase protects your private key. OpenSSH will ask for one next.\n\nUp/Down: field | Left/Right/Space: key type\nEnter: create key | Esc: cancel\n\n{}", if form.field == 0 { ">" } else { " " }, if form.rsa { "RSA 4096" } else { "Ed25519" }, if form.field == 1 { ">" } else { " " }, form.filename, message)),
-            Self::Register { selected, .. } => (" Add public key: step 2 of 3 ", format!("Add this public key to a server now? [y/N]\n\n{} Add public key to server\n{} Skip server setup\n\nArrows: choose | Enter: continue\nY: add | N / Esc: skip\n\n{}", if *selected { ">" } else { " " }, if *selected { " " } else { ">" }, message)),
-            Self::Server { remote, port, field, .. } => (" Server setup: step 2 of 3 ", format!("{} Server (user@hostname): {}\n\n{} SSH port: {}\n\nUp/Down: field | Enter: add public key and load into agent\nEsc: back\n\nOpenSSH will ask you to verify the host and sign in.\n\n{}", if *field == 0 { ">" } else { " " }, remote, if *field == 1 { ">" } else { " " }, port, message)),
-        };
-        frame.render_widget(
-            Paragraph::new(dialog_text(&text, message))
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(
-                            if matches!(self, Self::Delete { .. }) {
-                                Tone::Danger
-                            } else {
-                                Tone::Accent
-                            }
-                            .style()
-                            .add_modifier(Modifier::BOLD),
-                        ),
+            Self::Parameters(form) => (
+                " Create key: step 1 of 3 ",
+                format!(
+                    "{} Key type: {}
+
+{} Filename: {}
+
+A passphrase protects your private key. OpenSSH will ask for one next.
+
+{message}",
+                    if form.field == 0 { ">" } else { " " },
+                    if form.rsa { "RSA 4096" } else { "Ed25519" },
+                    if form.field == 1 { ">" } else { " " },
+                    form.filename
                 ),
+                "Up/Down: field | Left/Right/Space: key type
+Enter: create key | Esc: cancel | PgUp/PgDn: scroll",
+            ),
+            Self::Register { selected, .. } => (
+                " Add public key: step 2 of 3 ",
+                format!(
+                    "Add this public key to a server now? [y/N]
+
+{} Add public key to server
+{} Skip server setup
+
+{message}",
+                    if *selected { ">" } else { " " },
+                    if *selected { " " } else { ">" }
+                ),
+                "Arrows: choose | Enter: continue
+Y: add | N / Esc: skip | PgUp/PgDn: scroll",
+            ),
+            Self::Server {
+                remote,
+                port,
+                field,
+                ..
+            } => (
+                " Server setup: step 2 of 3 ",
+                format!(
+                    "{} Server (user@hostname): {remote}
+
+{} SSH port: {port}
+
+OpenSSH will ask you to verify the host and sign in.
+
+{message}",
+                    if *field == 0 { ">" } else { " " },
+                    if *field == 1 { ">" } else { " " }
+                ),
+                "Up/Down: field | Enter: add public key and load into agent
+Esc: back | PgUp/PgDn: scroll",
+            ),
+        };
+        draw_dialog(
+            frame,
             popup,
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(if matches!(self, Self::Delete { .. }) {
+                    Tone::Danger.style()
+                } else {
+                    Tone::Accent.style()
+                }),
+            dialog_text(&text, notice),
+            footer,
+            scroll,
         );
     }
 }

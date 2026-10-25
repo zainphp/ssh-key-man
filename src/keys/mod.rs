@@ -5,6 +5,7 @@ mod tests;
 
 pub use crate::cli::interactive::{prompt, require_terminal};
 pub use inventory::inventory;
+pub(crate) use operations::load_retry;
 pub use operations::{delete, deploy, generate, validate_remote};
 
 use anyhow::{bail, Context, Result};

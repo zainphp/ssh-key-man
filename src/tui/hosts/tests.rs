@@ -46,7 +46,7 @@ fn form_creates_edits_and_confirms_deletion() {
     ];
     view.handle_key(dir.path(), press(KeyCode::Enter)).unwrap();
     assert_eq!(view.config.entries[0].host.alias, "work");
-    assert!(view.message.contains("ssh work"));
+    assert!(view.message.text.contains("ssh work"));
     view.handle_action(Action::Edit).unwrap();
     view.handle_key(
         dir.path(),

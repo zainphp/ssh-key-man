@@ -143,6 +143,8 @@ fn generate_wizard(dir: &Path) -> Result<()> {
             let remote = cli::interactive::prompt("Server (user@hostname): ", "")?;
             let port = cli::interactive::prompt("SSH port (22): ", "22")?
                 .parse::<u16>()
+                .ok()
+                .filter(|port| *port > 0)
                 .context("Invalid SSH port. Enter a number from 1 to 65535.")?;
             keys::deploy(&key, &remote, port)?;
         }
@@ -156,10 +158,11 @@ fn generate_wizard(dir: &Path) -> Result<()> {
             key.path.display()
         );
     }
+    let retry = keys::load_retry(&key);
     match (registration, load) {
-        (Err(a), Err(b)) => bail!("Key was saved, but adding it to the server and loading it into the agent failed.\n{a:#}\n{b:#}\nRetry loading with skm load {name}."),
-        (Err(e), _) => Err(e).context("Key was saved and loaded, but remote setup did not finish. Add it later with ssh-copy-id -i <key>.pub user@hostname."),
-        (_, Err(e)) => Err(e).with_context(|| format!("Key was saved, but agent loading failed. Retry with skm load {name}.")),
+        (Err(a), Err(b)) => bail!("Key was saved, but adding it to the server and loading it into the agent failed.\n{a:#}\n{b:#}\nRetry loading with {retry}."),
+        (Err(e), _) => Err(e).context("Key was saved and loaded, but remote setup did not finish."),
+        (_, Err(e)) => Err(e).with_context(|| format!("Key was saved, but agent loading failed. Retry with {retry}.")),
         _ => Ok(()),
     }
 }
