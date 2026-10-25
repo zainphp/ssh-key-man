@@ -1,6 +1,6 @@
 use super::*;
 use crate::tui::wizard::KeyForm;
-use ratatui::{backend::TestBackend, style::Color, Terminal};
+use ratatui::{backend::TestBackend, style::Modifier, Terminal};
 fn press(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
@@ -189,7 +189,7 @@ fn both_tabs_are_visible_and_active_tab_is_highlighted() {
                 && !row.contains("Esc:")
         );
         let column = row.find(active).unwrap() as u16;
-        assert_eq!(buffer[(column, 1)].bg, Color::Cyan);
+        assert!(buffer[(column, 1)].modifier.contains(Modifier::REVERSED));
         app.handle_key(press(KeyCode::Right)).unwrap();
     }
 }

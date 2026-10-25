@@ -1,11 +1,12 @@
 use super::HostPage;
+use crate::theme::Tone;
 use crate::tui::{
     components,
     model::{Focus, Page},
 };
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::Modifier,
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
     Frame,
 };
@@ -35,7 +36,7 @@ impl HostPage {
             let rows = self.config.entries.iter().map(|entry| {
                 let host = &entry.host;
                 let alias = if entry.read_only {
-                    Cell::from(format!("{} [read-only]", host.alias))
+                    Cell::from(format!("{} [read-only]", host.alias)).style(Tone::Warning.style())
                 } else {
                     Cell::from(host.alias.as_str())
                 };
@@ -57,7 +58,7 @@ impl HostPage {
             )
             .header(
                 Row::new(["Alias", "Hostname or IP", "Username", "Port"])
-                    .style(Style::default().add_modifier(Modifier::BOLD)),
+                    .style(Tone::Accent.style().add_modifier(Modifier::BOLD)),
             )
             .row_highlight_style(components::selection_style(focus == Focus::List))
             .highlight_symbol("> ");
@@ -111,9 +112,18 @@ impl HostPage {
                 (" Delete SSH host ", format!("Delete alias {alias} and its settings from ~/.ssh/config?\n\nA backup will be saved. No keys or server files will be deleted.\n\n{} Cancel\n{} Delete alias\n\nArrows: choose | Enter: confirm | Esc: cancel\nY: delete | N: cancel\n\n{}", if self.delete_selected { " " } else { ">" }, if self.delete_selected { ">" } else { " " }, self.message))
             };
             frame.render_widget(
-                Paragraph::new(text)
+                Paragraph::new(components::dialog_text(&text, &self.message))
                     .wrap(Wrap { trim: false })
-                    .block(Block::default().title(title).borders(Borders::ALL)),
+                    .block(
+                        Block::default()
+                            .title(title)
+                            .borders(Borders::ALL)
+                            .border_style(if self.deleting {
+                                Tone::Danger.style()
+                            } else {
+                                Tone::Accent.style()
+                            }),
+                    ),
                 popup,
             );
         }

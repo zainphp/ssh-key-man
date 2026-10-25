@@ -84,3 +84,5 @@ cargo build --release --locked
 ```
 
 Integration tests require OpenSSH. They create disposable keys, including an encrypted key, and isolated temporary agents. They check actual fingerprints, duplicate prevention, socket links, file permissions, mismatched public keys, both binary names, and shell output. Tests never add a key to a remote server. CI runs these checks on Linux and macOS.
+
+Text colors highlight actions, loaded keys, warnings, and errors. Set `NO_COLOR=1` to disable colors. CLI output stays plain when redirected; `skm init` always prints plain shell configuration.

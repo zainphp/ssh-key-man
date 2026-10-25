@@ -1,3 +1,4 @@
+use crate::theme::Tone;
 use crate::{agent, cli, keys, tui};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -22,7 +23,7 @@ pub(crate) fn dispatch(cli: cli::Cli) -> Result<()> {
 fn load_keys(dir: &Path, filename: Option<String>) -> Result<()> {
     let inventory = keys::inventory(dir)?;
     for warning in &inventory.warnings {
-        eprintln!("Warning: {warning}");
+        eprintln!("{} {warning}", Tone::Warning.stderr("Warning:"));
     }
     let selected = if let Some(name) = filename {
         let path = keys::key_path(dir, &name)?;
@@ -53,9 +54,9 @@ fn load_keys(dir: &Path, filename: Option<String>) -> Result<()> {
                 "{}: {} ({})",
                 key.path.display(),
                 if loaded {
-                    "Loaded in agent"
+                    Tone::Success.stdout("Loaded in agent")
                 } else {
-                    "Already loaded"
+                    Tone::Success.stdout("Already loaded")
                 },
                 key.fingerprint
             ),
@@ -72,7 +73,10 @@ fn check_agent(dir: &Path) -> Result<()> {
     for binary in ["ssh-keygen", "ssh-add", "ssh-agent", "ssh-copy-id"] {
         match which::which(binary) {
             Ok(path) => println!("{binary}: {}", path.display()),
-            Err(_) => println!("{binary}: missing. Install OpenSSH to use this command."),
+            Err(_) => println!(
+                "{binary}: {}. Install OpenSSH to use this command.",
+                Tone::Warning.stdout("missing")
+            ),
         }
     }
     let agent = agent::ensure(dir)?;
@@ -87,7 +91,10 @@ fn generate_wizard(dir: &Path) -> Result<()> {
         match answer.to_lowercase().as_str() {
             "ed25519" => break false,
             "rsa" | "rsa4096" => break true,
-            _ => eprintln!("Choose ed25519 or rsa. RSA keys use 4096 bits."),
+            _ => eprintln!(
+                "{}",
+                Tone::Warning.stderr("Choose ed25519 or rsa. RSA keys use 4096 bits.")
+            ),
         }
     };
     let default = if use_rsa { "id_rsa" } else { "id_ed25519" };
@@ -97,7 +104,8 @@ fn generate_wizard(dir: &Path) -> Result<()> {
     );
     let key = keys::generate(dir, &name, use_rsa)?;
     println!(
-        "Created {}\nFingerprint: {}",
+        "{} {}\nFingerprint: {}",
+        Tone::Success.stdout("Created"),
         key.path.display(),
         key.fingerprint
     );
@@ -114,7 +122,11 @@ fn generate_wizard(dir: &Path) -> Result<()> {
     })();
     let load = agent::ensure(dir).and_then(|mut agent| agent::load(&mut agent, &key));
     if load.is_ok() {
-        println!("Loaded in agent: {}", key.path.display());
+        println!(
+            "{} {}",
+            Tone::Success.stdout("Loaded in agent:"),
+            key.path.display()
+        );
     }
     match (registration, load) {
         (Err(a), Err(b)) => bail!("Key was saved, but adding it to the server and loading it into the agent failed.\n{a:#}\n{b:#}\nRetry loading with skm load {name}."),

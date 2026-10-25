@@ -9,7 +9,7 @@ pub fn require_terminal() -> Result<()> {
 }
 
 pub fn prompt(label: &str, default: &str) -> Result<String> {
-    print!("{label}");
+    print!("{}", crate::theme::Tone::Accent.stdout(label));
     io::stdout()
         .flush()
         .context("Could not display the prompt. Check your terminal.")?;

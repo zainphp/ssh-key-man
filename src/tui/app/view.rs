@@ -1,10 +1,12 @@
 use super::App;
+use crate::theme::Tone;
 use crate::tui::{
     components::{draw_actions, draw_notice, draw_tabs, selection_style},
     model::{Focus, Page},
 };
 use ratatui::{
     layout::{Constraint, Layout},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
@@ -63,17 +65,17 @@ impl App {
                     .agent
                     .as_ref()
                     .is_some_and(|a| a.fingerprints.contains(&key.fingerprint));
-                Row::new(vec![Cell::from(format!(
-                    "{}\n{}",
-                    key.path.file_name().unwrap_or_default().to_string_lossy(),
-                    if loaded {
-                        "Loaded in agent"
-                    } else if !key.private {
-                        "Public key only"
-                    } else {
-                        "Not loaded"
-                    }
-                ))])
+                let (status, tone) = if loaded {
+                    ("Loaded in agent", Tone::Success)
+                } else if !key.private {
+                    ("Public key only", Tone::Warning)
+                } else {
+                    ("Not loaded", Tone::Warning)
+                };
+                Row::new(vec![Cell::from(Text::from(vec![
+                    Line::from(key.path.file_name().unwrap_or_default().to_string_lossy()),
+                    Line::styled(status, tone.style()),
+                ]))])
                 .height(2)
             });
             let table = Table::new(rows, [Constraint::Min(0)])
@@ -91,14 +93,22 @@ impl App {
             .selected()
             .and_then(|i| self.keys.get(i))
             .map(|key| {
-                format!(
-                    "File: {}\nKey type: {}\nFingerprint: {}",
-                    key.path.display(),
-                    key.algorithm,
-                    key.fingerprint
-                )
+                Text::from(vec![
+                    Line::from(vec![
+                        Span::styled("File: ", Tone::Accent.style()),
+                        Span::raw(key.path.display().to_string()),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("Key type: ", Tone::Accent.style()),
+                        Span::raw(key.algorithm.as_str()),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("Fingerprint: ", Tone::Accent.style()),
+                        Span::raw(key.fingerprint.as_str()),
+                    ]),
+                ])
             })
-            .unwrap_or_else(|| "Select a key to see its key type and fingerprint.".into());
+            .unwrap_or_else(|| Text::from("Select a key to see its key type and fingerprint."));
         frame.render_widget(
             Paragraph::new(details).wrap(Wrap { trim: false }).block(
                 Block::default()

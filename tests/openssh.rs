@@ -378,3 +378,19 @@ fn deletion_supports_missing_public_companions_and_public_only_files() {
     assert!(!dir.path().join("id_private").exists());
     assert!(!dir.path().join("id_public.pub").exists());
 }
+
+#[test]
+fn redirected_cli_errors_remain_plain_text() {
+    let home = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skm"))
+        .args(["load", "missing_key"])
+        .env("HOME", home.path())
+        .env_remove("NO_COLOR")
+        .env("TERM", "xterm-256color")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("Error: "));
+    assert!(!output.stdout.contains(&0x1b));
+    assert!(!output.stderr.contains(&0x1b));
+}

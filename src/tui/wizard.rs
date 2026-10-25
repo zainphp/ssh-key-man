@@ -1,10 +1,11 @@
-use super::model::Operation;
+use super::{components::dialog_text, model::Operation};
 use crate::keys::{self, Key};
+use crate::theme::Tone;
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Modifier,
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
@@ -202,12 +203,22 @@ impl KeyWizard {
             Self::Server { remote, port, field, .. } => (" Server setup: step 2 of 3 ", format!("{} Server (user@hostname): {}\n\n{} SSH port: {}\n\nUp/Down: field | Enter: add public key and load into agent\nEsc: back\n\nOpenSSH will ask you to verify the host and sign in.\n\n{}", if *field == 0 { ">" } else { " " }, remote, if *field == 1 { ">" } else { " " }, port, message)),
         };
         frame.render_widget(
-            Paragraph::new(text).wrap(Wrap { trim: false }).block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().add_modifier(Modifier::BOLD)),
-            ),
+            Paragraph::new(dialog_text(&text, message))
+                .wrap(Wrap { trim: false })
+                .block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(
+                            if matches!(self, Self::Delete { .. }) {
+                                Tone::Danger
+                            } else {
+                                Tone::Accent
+                            }
+                            .style()
+                            .add_modifier(Modifier::BOLD),
+                        ),
+                ),
             popup,
         );
     }

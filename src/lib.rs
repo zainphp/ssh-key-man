@@ -7,6 +7,7 @@ mod commands;
 pub mod hosts;
 pub mod keys;
 mod process;
+mod theme;
 mod tui;
 
 use clap::Parser;
@@ -16,7 +17,7 @@ pub fn run() -> ExitCode {
     match commands::dispatch(cli::Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Error: {error:#}");
+            eprintln!("{} {error:#}", theme::Tone::Danger.stderr("Error:"));
             ExitCode::FAILURE
         }
     }
