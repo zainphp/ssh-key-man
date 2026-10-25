@@ -94,6 +94,10 @@ fn key_sections_show_the_selected_key_and_enter_hint() {
             private: true,
         });
     }
+    app.agent = Some(crate::agent::Agent {
+        socket: dir.path().join("test.sock"),
+        fingerprints: ["SHA256:first".to_owned()].into_iter().collect(),
+    });
     app.key_selection.select(Some(0));
     for (width, height) in [(60, 18), (110, 30)] {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -113,6 +117,30 @@ fn key_sections_show_the_selected_key_and_enter_hint() {
         ] {
             assert!(screen.contains(label), "Missing {label}");
         }
+        let buffer = terminal.backend().buffer();
+        let marker = buffer
+            .content
+            .iter()
+            .position(|cell| cell.symbol() == "●")
+            .unwrap();
+        let x = marker as u16 % width;
+        let y = marker as u16 / width;
+        assert_eq!(buffer[(x + 1, y)].symbol(), "│");
+        assert_eq!(buffer[(x, y + 1)].symbol(), " ");
+        assert_eq!(
+            buffer[(x, y)].fg,
+            crate::theme::Tone::Success
+                .style()
+                .fg
+                .unwrap_or(ratatui::style::Color::Reset)
+        );
+        assert!(!buffer[(x, y)].modifier.contains(Modifier::REVERSED));
+        let list: String = (0..height)
+            .flat_map(|row| (0..=x).map(move |column| buffer[(column, row)].symbol()))
+            .collect();
+        assert!(!list.contains("Loaded in agent"));
+        assert!(!list.contains("Not loaded"));
+        assert!(screen.contains("Status: Loaded in agent"));
         assert!(!screen.contains(" Status "));
         assert!(!screen.contains("[L]"));
         assert!(!screen.contains("Esc: quit"));
@@ -129,6 +157,7 @@ fn key_sections_show_the_selected_key_and_enter_hint() {
         .map(|c| c.symbol())
         .collect();
     assert!(screen.contains("SHA256:second"));
+    assert!(screen.contains("Status: Not loaded"));
 }
 #[test]
 fn page_pickers_preserve_selection_and_leave_forms_in_control() {

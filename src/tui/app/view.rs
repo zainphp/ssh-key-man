@@ -6,6 +6,7 @@ use crate::tui::{
 };
 use ratatui::{
     layout::{Constraint, Layout},
+    style::Modifier,
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
@@ -40,6 +41,11 @@ impl App {
         draw_header(frame, areas[0], Page::Keys, self.focus);
         let sections = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(areas[1]);
+        let is_loaded = |key: &crate::keys::Key| {
+            self.agent
+                .as_ref()
+                .is_some_and(|agent| agent.fingerprints.contains(&key.fingerprint))
+        };
         if self.keys.is_empty() {
             frame.render_widget(
                 Paragraph::new("No keys found.\nPress N to create a key.")
@@ -49,24 +55,12 @@ impl App {
             );
         } else {
             let rows = self.keys.iter().map(|key| {
-                let loaded = self
-                    .agent
-                    .as_ref()
-                    .is_some_and(|a| a.fingerprints.contains(&key.fingerprint));
-                let (status, tone) = if loaded {
-                    ("Loaded in agent", Tone::Success)
-                } else if !key.private {
-                    ("Public key only", Tone::Warning)
-                } else {
-                    ("Not loaded", Tone::Warning)
-                };
-                Row::new(vec![Cell::from(Text::from(vec![
-                    Line::from(key.path.file_name().unwrap_or_default().to_string_lossy()),
-                    Line::styled(status, tone.style()),
-                ]))])
-                .height(2)
+                Row::new([
+                    Cell::from(key.path.file_name().unwrap_or_default().to_string_lossy()),
+                    Cell::from(if is_loaded(key) { "●" } else { "" }).style(Tone::Success.style()),
+                ])
             });
-            let table = Table::new(rows, [Constraint::Min(0)])
+            let table = Table::new(rows, [Constraint::Min(0), Constraint::Length(1)])
                 .block(
                     Block::default()
                         .title(" Keys in ~/.ssh/ ")
@@ -75,13 +69,31 @@ impl App {
                 .row_highlight_style(selection_style(self.focus == Focus::List))
                 .highlight_symbol("> ");
             frame.render_stateful_widget(table, sections[0], &mut self.key_selection);
+            let indicator_column = sections[0].right() - 2;
+            for y in sections[0].y + 1..sections[0].bottom() - 1 {
+                let cell = &mut frame.buffer_mut()[(indicator_column, y)];
+                if cell.symbol() == "●" {
+                    cell.set_style(Tone::Success.style().remove_modifier(Modifier::REVERSED));
+                }
+            }
         }
         let details = self
             .key_selection
             .selected()
             .and_then(|i| self.keys.get(i))
             .map(|key| {
+                let (status, tone) = if is_loaded(key) {
+                    ("Loaded in agent", Tone::Success)
+                } else if !key.private {
+                    ("Public key only", Tone::Warning)
+                } else {
+                    ("Not loaded", Tone::Warning)
+                };
                 Text::from(vec![
+                    Line::from(vec![
+                        Span::styled("Status: ", Tone::Accent.style()),
+                        Span::styled(status, tone.style()),
+                    ]),
                     Line::from(vec![
                         Span::styled("File: ", Tone::Accent.style()),
                         Span::raw(key.path.display().to_string()),
