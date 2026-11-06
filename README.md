@@ -139,3 +139,13 @@ The TUI uses a dark background with explicit, contrast-tested text colors. CLI c
 ## Releases
 
 Releases are published by [release.yml](.github/workflows/release.yml). Set the package version in `Cargo.toml`, update `Cargo.lock`, then push a matching tag such as `v0.1.0`. The workflow runs CI, builds Linux musl and macOS binaries for x86_64 and ARM64, and publishes archives with SHA256 checksum files. Tags containing a hyphen publish a prerelease; the default installer uses the latest stable release. Test the installer locally with `python3 tests/install.py target/debug/skm` after building the binary.
+
+If a release already exists, publishing uploads its binaries and checksums while keeping its title, notes, and release status. Repeating publication replaces assets with the same filenames.
+
+To recover a failed publication without moving its tag, push the workflow fix to `main`, then run the Release workflow manually with the existing tag:
+
+```sh
+gh workflow run release.yml --repo zainphp/ssh-key-man --ref main -f tag=v0.1.0
+```
+
+The manual run checks and builds the tagged source using the workflow on `main`. Re-running an old failed run uses its original workflow, so it will not pick up a later workflow fix.
