@@ -1,6 +1,11 @@
 name: CI
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check
+        required: false
+        type: string
   push:
     branches: ['**']
   pull_request:
@@ -14,6 +19,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Test release publishing
+        run: python3 tests/release.py
+      - name: Check out source for CI
+        if: inputs.ref != '' && inputs.ref != github.ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
