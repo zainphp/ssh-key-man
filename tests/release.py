@@ -66,7 +66,7 @@ sys.exit(99)
         self.env = {
             **os.environ,
             'PATH': str(self.tools) + os.pathsep + os.environ['PATH'],
-            'RELEASE_TAG': 'v0.1.0',
+            'RELEASE_TAG': 'v0.1.1',
             'SKM_TEST_CALLS': str(self.log),
             'SKM_TEST_EXISTS': '0',
         }
@@ -98,7 +98,7 @@ sys.exit(99)
             upload = calls[-2]
             self.assertIn('--clobber', upload)
             self.assertEqual(set(self.assets), set(argument for argument in upload if argument.startswith('dist/')))
-            self.assertEqual(calls[-1], ['release', 'edit', 'v0.1.0', '--draft=false'])
+            self.assertEqual(calls[-1], ['release', 'edit', 'v0.1.1', '--draft=false'])
 
     def test_published_release_is_left_unchanged_on_reruns(self):
         output, calls = self.publish(SKM_TEST_EXISTS='1')
@@ -107,10 +107,10 @@ sys.exit(99)
         self.assertIn('already published', output.stdout)
 
     def test_new_prerelease_retains_its_prerelease_flag(self):
-        output, calls = self.publish(RELEASE_TAG='v0.1.1-beta.1')
+        output, calls = self.publish(RELEASE_TAG='v0.1.2-beta.1')
         self.assertEqual(output.returncode, 0, output.stderr)
         creation = next(call for call in calls if call[:2] == ['release', 'create'])
-        self.assertIn('v0.1.1-beta.1', creation)
+        self.assertIn('v0.1.2-beta.1', creation)
         self.assertIn('--prerelease', creation)
 
     def test_upload_failures_are_reported(self):

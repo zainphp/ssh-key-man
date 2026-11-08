@@ -12,22 +12,12 @@ curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh
 
 The installer downloads a prebuilt GitHub release, verifies its SHA256 checksum, and installs `ssh-key-man` and the `skm` alias in `~/.local/bin`. Rust is not required. Add that directory to `PATH` if the installer asks. It also adds agent settings to startup files for Bash, Zsh, or Fish. It does not use sudo or install system packages.
 
-## Updates
-
-Update an existing installation with:
-
-```sh
-skm update
-```
-
-The update command resolves the latest stable release, downloads its installer from the tag's exact commit, and runs it in the current installation folder. The installer receives that same release tag, so it downloads binaries from the selected release even if another release appears during the update. The folder must be writable. A failed installer download is never executed.
-
-You can also rerun the curl install command: it checks the downloaded release version, updates the binary when the version differs, and repairs shell setup without adding duplicate settings. An already installed version is kept. Downloads that fail checksum verification leave the existing installation untouched.
+To update, run `skm update` or rerun the install command.
 
 To choose a folder or a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | SKM_INSTALL_DIR="$HOME/.local/bin" SKM_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | SKM_INSTALL_DIR="$HOME/.local/bin" SKM_VERSION=v0.1.1 sh
 ```
 
 ## Requirements
@@ -139,18 +129,4 @@ Integration tests require OpenSSH. They create disposable keys, including an enc
 
 The TUI uses a dark background with explicit, contrast-tested text colors. CLI color labels use the same foreground/background pairs. Colors highlight actions, loaded keys, warnings, and errors. Set `NO_COLOR=1` to disable colors. CLI output stays plain when redirected.
 
-## Releases
-
-Releases are published by [release.yml](.github/workflows/release.yml). Set the package version in `Cargo.toml`, update `Cargo.lock`, then push a matching tag such as `v0.1.0`. The workflow runs CI, builds Linux musl and macOS binaries for x86_64 and ARM64, and publishes archives with SHA256 checksum files. Tags containing a hyphen publish a prerelease; the default installer uses the latest stable release. Test the installer locally with `python3 tests/install.py target/debug/skm` after building the binary.
-
-Publishing creates or reuses a draft release, checks that all four platform archives and their checksums are present, and uploads them before publishing. If an upload fails, the release stays a draft so the workflow can be rerun. Existing draft titles, notes, and prerelease settings are preserved.
-
-Published releases are left unchanged on reruns, whether or not they are immutable. Use a new version and tag to publish fixes. This workflow supports [GitHub release immutability](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases); enable it in the repository's release settings to lock published assets and tags. Publishing jobs for the same tag run one at a time.
-
-To recover a failed publication without moving its tag, push the workflow fix to `main`, then run the Release workflow manually with the existing tag:
-
-```sh
-gh workflow run release.yml --repo zainphp/ssh-key-man --ref main -f tag=v0.1.0
-```
-
-The manual run checks and builds the tagged source using the workflow on `main`. Re-running an old failed run uses its original workflow, so it will not pick up a later workflow fix.
+For release publishing, see the [contributor documentation](CONTRIBUTING.md#releases).

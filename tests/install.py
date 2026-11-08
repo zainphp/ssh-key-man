@@ -26,7 +26,7 @@ class InstallerTests(unittest.TestCase):
         self.tools.mkdir()
         self.destination = self.root / "install with spaces"
         self.fixture = self.root / "release.tar.gz"
-        self.make_archive(b"#!/bin/sh\nprintf 'ssh-key-man 0.1.0\\n'\n")
+        self.make_archive(b"#!/bin/sh\nprintf 'ssh-key-man 0.1.1\\n'\n")
         self.script("uname", '#!/bin/sh\ncase "$1" in -s) printf "%s\\n" "$SKM_TEST_OS";; -m) printf "%s\\n" "$SKM_TEST_ARCH";; esac\n')
         self.script("curl", f'''#!{sys.executable}
 import os, pathlib, shutil, sys
@@ -39,7 +39,7 @@ if os.environ.get('SKM_TEST_DOWNLOAD_FAIL'):
 if url.endswith('/releases/latest'):
     if os.environ.get('SKM_TEST_FAIL_STAGE') == 'release':
         sys.exit(22)
-    print(os.environ.get('SKM_TEST_RELEASE_URL', 'https://github.com/zainphp/ssh-key-man/releases/tag/v0.1.0'), end='')
+    print(os.environ.get('SKM_TEST_RELEASE_URL', 'https://github.com/zainphp/ssh-key-man/releases/tag/v0.1.1'), end='')
     sys.exit(0)
 if '/commits/' in url:
     if os.environ.get('SKM_TEST_FAIL_STAGE') == 'commit':
@@ -98,7 +98,7 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         self.assertTrue(os.access(binary, os.X_OK))
         self.assertTrue((self.destination / "skm").is_symlink())
         self.assertEqual(os.readlink(self.destination / "skm"), "ssh-key-man")
-        self.assertEqual(subprocess.check_output([str(self.destination / "skm"), "--version"], text=True).strip(), "ssh-key-man 0.1.0")
+        self.assertEqual(subprocess.check_output([str(self.destination / "skm"), "--version"], text=True).strip(), "ssh-key-man 0.1.1")
         self.assertFalse(list(self.destination.glob(".skm-install.*")))
 
     def test_install_and_update_both_command_names(self):
@@ -125,9 +125,9 @@ shutil.copyfile(source, args[args.index('-o') + 1])
             ("Darwin", "arm64", "aarch64-apple-darwin"),
         ]:
             with self.subTest(target=target):
-                output = self.run_installer(SKM_TEST_OS=system, SKM_TEST_ARCH=architecture, SKM_VERSION="v0.1.0")
+                output = self.run_installer(SKM_TEST_OS=system, SKM_TEST_ARCH=architecture, SKM_VERSION="v0.1.1")
                 self.assertEqual(output.returncode, 0, output.stderr)
-                self.assertIn(f"/download/v0.1.0/ssh-key-man-{target}.tar.gz", (self.root / "downloads").read_text())
+                self.assertIn(f"/download/v0.1.1/ssh-key-man-{target}.tar.gz", (self.root / "downloads").read_text())
 
     def test_failed_download_and_checksum_keep_existing_installation(self):
         self.assertEqual(self.run_installer().returncode, 0)
@@ -254,10 +254,10 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         downloads = (self.root / "downloads").read_text().splitlines()
         self.assertEqual(downloads[:3], [
             "https://github.com/zainphp/ssh-key-man/releases/latest",
-            "https://api.github.com/repos/zainphp/ssh-key-man/commits/tags%2Fv0.1.0",
+            "https://api.github.com/repos/zainphp/ssh-key-man/commits/tags%2Fv0.1.1",
             "https://raw.githubusercontent.com/zainphp/ssh-key-man/" + "ab" * 20 + "/install.sh",
         ])
-        self.assertTrue(all("/download/v0.1.0/" in url for url in downloads[3:]))
+        self.assertTrue(all("/download/v0.1.1/" in url for url in downloads[3:]))
 
     def test_cli_update_failures_never_run_partial_installer(self):
         if BINARY is None:
@@ -269,7 +269,7 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         for overrides in [
             {"SKM_TEST_FAIL_STAGE": stage} for stage in ["release", "commit", "script"]
         ] + [
-            {"SKM_TEST_RELEASE_URL": "https://example.com/releases/tag/v0.1.0"},
+            {"SKM_TEST_RELEASE_URL": "https://example.com/releases/tag/v0.1.1"},
             {"SKM_TEST_RELEASE_URL": "https://github.com/zainphp/ssh-key-man/releases/tag/../../main"},
             {"SKM_TEST_COMMIT": "main"},
         ]:
