@@ -450,3 +450,47 @@ fn missing_ssh_add_does_not_start_an_agent() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Could not find ssh-add"));
     assert!(!home.path().join("agent-started").exists());
 }
+
+#[test]
+fn loading_reports_when_the_parent_shell_uses_a_different_agent() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join(".ssh");
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    generate(&dir, "id_test", "ed25519", "");
+    let socket = home.path().join("agent-test.sock");
+    let _running = start_agent(&socket);
+    let stable = dir.join("agent.sock");
+    symlink(&socket, &stable).unwrap();
+    let alias = home.path().join("agent-alias.sock");
+    symlink(&socket, &alias).unwrap();
+    for (parent_socket, needs_setup) in [
+        (None, true),
+        (Some(home.path().join("dead.sock")), true),
+        (Some(socket.clone()), false),
+        (Some(stable), false),
+        (Some(alias), false),
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_skm"));
+        command
+            .args(["load", "id_test"])
+            .env("HOME", home.path())
+            .env_remove("SSH_AUTH_SOCK");
+        if let Some(parent_socket) = parent_socket {
+            command.env("SSH_AUTH_SOCK", parent_socket);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.contains("eval \"$(skm init)\""),
+            needs_setup,
+            "{stderr}"
+        );
+        assert_eq!(agent::probe(&socket).unwrap().fingerprints.len(), 1);
+    }
+}

@@ -1,5 +1,25 @@
 use anyhow::{bail, Context, Result};
 use std::io::{self, IsTerminal, Write};
+use std::path::Path;
+
+pub(crate) fn agent_hint(socket: &Path) -> Option<&'static str> {
+    let shell_socket =
+        std::env::var_os("SSH_AUTH_SOCK").and_then(|path| std::fs::canonicalize(path).ok());
+    let loaded_socket = std::fs::canonicalize(socket).ok();
+    if shell_socket.is_some() && shell_socket == loaded_socket {
+        return None;
+    }
+    Some("Your shell is not connected to this SSH agent.\nBash/Zsh: eval \"$(skm init)\"\nFish: skm init fish | source\nFor future terminals, run skm init --install once.")
+}
+
+pub(crate) fn print_agent_hint(socket: &Path) {
+    if let Some(hint) = agent_hint(socket) {
+        eprintln!(
+            "{}\n{hint}",
+            crate::theme::Tone::Warning.stderr("Shell setup needed:")
+        );
+    }
+}
 
 pub fn require_terminal() -> Result<()> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
