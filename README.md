@@ -20,7 +20,9 @@ Update an existing installation with:
 skm update
 ```
 
-The update command uses the same installer in the current installation folder. That folder must be writable. You can also rerun the curl command: it checks the downloaded release version, updates the binary when the version differs, and repairs shell setup without adding duplicate settings. An already installed version is kept. Downloads that fail checksum verification leave the existing installation untouched.
+The update command resolves the latest stable release, downloads its installer from the tag's exact commit, and runs it in the current installation folder. The installer receives that same release tag, so it downloads binaries from the selected release even if another release appears during the update. The folder must be writable. A failed installer download is never executed.
+
+You can also rerun the curl install command: it checks the downloaded release version, updates the binary when the version differs, and repairs shell setup without adding duplicate settings. An already installed version is kept. Downloads that fail checksum verification leave the existing installation untouched.
 
 To choose a folder or a specific release:
 
