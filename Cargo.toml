@@ -1,6 +1,6 @@
 [package]
 name = "ssh-key-man"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "SSH key generation, host aliases, remote setup, and agent management"
 license = "MIT"

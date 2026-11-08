@@ -125,7 +125,7 @@ install_skm() {
     esac
     version=${SKM_VERSION:-latest}
     case "$version" in
-        *[!a-zA-Z0-9._-]*|'') fail 'Invalid SKM_VERSION. Use a release tag such as v0.1.0.' ;;
+        *[!a-zA-Z0-9._-]*|'') fail 'Invalid SKM_VERSION. Use a release tag such as v0.1.1.' ;;
     esac
     if [ -n "${SKM_INSTALL_DIR:-}" ]; then
         install_dir=$SKM_INSTALL_DIR
