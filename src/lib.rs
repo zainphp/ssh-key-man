@@ -9,6 +9,7 @@ pub mod keys;
 mod process;
 mod theme;
 mod tui;
+mod update;
 
 use clap::Parser;
 use std::process::ExitCode;

@@ -36,6 +36,23 @@ with open(os.environ['SKM_TEST_LOG'], 'a') as log:
     log.write(url + '\\n')
 if os.environ.get('SKM_TEST_DOWNLOAD_FAIL'):
     sys.exit(22)
+if url.endswith('/releases/latest'):
+    if os.environ.get('SKM_TEST_FAIL_STAGE') == 'release':
+        sys.exit(22)
+    print(os.environ.get('SKM_TEST_RELEASE_URL', 'https://github.com/zainphp/ssh-key-man/releases/tag/v0.1.0'), end='')
+    sys.exit(0)
+if '/commits/' in url:
+    if os.environ.get('SKM_TEST_FAIL_STAGE') == 'commit':
+        sys.exit(22)
+    print(os.environ.get('SKM_TEST_COMMIT', 'ab' * 20))
+    sys.exit(0)
+if url.startswith('https://raw.githubusercontent.com/'):
+    destination = args[args.index('--output') + 1]
+    if os.environ.get('SKM_TEST_FAIL_STAGE') == 'script':
+        pathlib.Path(destination).write_text('touch "$HOME/partial-installer-ran"\\n')
+        sys.exit(22)
+    shutil.copyfile(os.environ['SKM_TEST_INSTALLER'], destination)
+    sys.exit(0)
 source = os.environ['SKM_TEST_FIXTURE'] + ('.sha256' if url.endswith('.sha256') else '')
 shutil.copyfile(source, args[args.index('-o') + 1])
 ''')
@@ -48,6 +65,7 @@ shutil.copyfile(source, args[args.index('-o') + 1])
             "SKM_TEST_FIXTURE": str(self.fixture),
             "SKM_TEST_LOG": str(self.root / "downloads"),
             "SKM_TEST_OS": "Linux",
+            "SKM_TEST_INSTALLER": str(ROOT / "install.sh"),
             "SKM_TEST_ARCH": "x86_64",
         }
         self.env.pop("SKM_VERSION", None)
@@ -230,9 +248,37 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         self.destination.mkdir()
         executable = self.destination / "skm"
         shutil.copy2(BINARY, executable)
-        output = subprocess.run([str(executable), "update"], env=self.env, capture_output=True, text=True)
+        output = subprocess.run([str(executable), "update"], env={**self.env, "SKM_VERSION": "v9.9.9"}, capture_output=True, text=True)
         self.assertEqual(output.returncode, 0, output.stderr)
         self.assert_installed()
+        downloads = (self.root / "downloads").read_text().splitlines()
+        self.assertEqual(downloads[:3], [
+            "https://github.com/zainphp/ssh-key-man/releases/latest",
+            "https://api.github.com/repos/zainphp/ssh-key-man/commits/tags%2Fv0.1.0",
+            "https://raw.githubusercontent.com/zainphp/ssh-key-man/" + "ab" * 20 + "/install.sh",
+        ])
+        self.assertTrue(all("/download/v0.1.0/" in url for url in downloads[3:]))
+
+    def test_cli_update_failures_never_run_partial_installer(self):
+        if BINARY is None:
+            self.skipTest("Pass a built skm binary to check updater failures")
+        self.destination.mkdir()
+        executable = self.destination / "skm"
+        shutil.copy2(BINARY, executable)
+        original = executable.read_bytes()
+        for overrides in [
+            {"SKM_TEST_FAIL_STAGE": stage} for stage in ["release", "commit", "script"]
+        ] + [
+            {"SKM_TEST_RELEASE_URL": "https://example.com/releases/tag/v0.1.0"},
+            {"SKM_TEST_RELEASE_URL": "https://github.com/zainphp/ssh-key-man/releases/tag/../../main"},
+            {"SKM_TEST_COMMIT": "main"},
+        ]:
+            with self.subTest(overrides=overrides):
+                output = subprocess.run([str(executable), "update"], env={**self.env, **overrides}, capture_output=True, text=True)
+                self.assertNotEqual(output.returncode, 0)
+                self.assertEqual(executable.read_bytes(), original)
+                self.assertFalse((self.root / "partial-installer-ran").exists())
+                self.assertFalse((self.destination / "ssh-key-man").exists())
 
 
 if __name__ == "__main__":
