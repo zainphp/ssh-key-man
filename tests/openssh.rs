@@ -140,23 +140,16 @@ fn rejects_dead_socket_and_symlinked_private_keys() {
 }
 
 #[test]
-fn shell_initialization_is_clean_and_does_not_create_ssh_directory() {
+fn removed_init_command_does_not_create_ssh_directory() {
     let home = tempfile::tempdir().unwrap();
     for binary in [env!("CARGO_BIN_EXE_skm"), env!("CARGO_BIN_EXE_ssh-key-man")] {
-        for (shell, expected) in [
-            ("bash", "export SSH_AUTH_SOCK=\"$HOME/.ssh/agent.sock\"\n"),
-            ("zsh", "export SSH_AUTH_SOCK=\"$HOME/.ssh/agent.sock\"\n"),
-            ("fish", "set -gx SSH_AUTH_SOCK \"$HOME/.ssh/agent.sock\"\n"),
-        ] {
-            let output = Command::new(binary)
-                .args(["init", shell])
-                .env("HOME", home.path())
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
-            assert!(output.stderr.is_empty());
-        }
+        let output = Command::new(binary)
+            .arg("init")
+            .env("HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
         let help = Command::new(binary).arg("--help").output().unwrap();
         assert!(help.status.success());
         let gen = Command::new(binary)
@@ -487,7 +480,7 @@ fn loading_reports_when_the_parent_shell_uses_a_different_agent() {
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(
-            stderr.contains("eval \"$(skm init)\""),
+            stderr.contains("export SSH_AUTH_SOCK=\"$HOME/.ssh/agent.sock\""),
             needs_setup,
             "{stderr}"
         );

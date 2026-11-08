@@ -5,10 +5,12 @@ import io
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,7 @@ shutil.copyfile(source, args[args.index('-o') + 1])
             **os.environ,
             "PATH": str(self.tools) + os.pathsep + os.environ["PATH"],
             "HOME": str(self.root),
+            "SHELL": "/bin/bash",
             "SKM_INSTALL_DIR": str(self.destination),
             "SKM_TEST_FIXTURE": str(self.fixture),
             "SKM_TEST_LOG": str(self.root / "downloads"),
@@ -48,6 +51,8 @@ shutil.copyfile(source, args[args.index('-o') + 1])
             "SKM_TEST_ARCH": "x86_64",
         }
         self.env.pop("SKM_VERSION", None)
+        self.env.pop("ZDOTDIR", None)
+        self.env.pop("XDG_CONFIG_HOME", None)
 
     def script(self, name, text):
         path = self.tools / name
@@ -83,6 +88,16 @@ shutil.copyfile(source, args[args.index('-o') + 1])
             output = self.run_installer()
             self.assertEqual(output.returncode, 0, output.stderr)
             self.assert_installed()
+        executable = self.destination / "ssh-key-man"
+        inode = executable.stat().st_ino
+        output = self.run_installer()
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertIn("already installed", output.stdout)
+        self.assertEqual(executable.stat().st_ino, inode)
+        self.make_archive(b"#!/bin/sh\nprintf 'ssh-key-man 0.2.0\\n'\n")
+        output = self.run_installer()
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertEqual(subprocess.check_output([str(executable), "--version"], text=True).strip(), "ssh-key-man 0.2.0")
 
     def test_platforms_and_pinned_release(self):
         for system, architecture, target in [
@@ -116,15 +131,98 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         self.assertFalse((self.destination / "ssh-key-man").exists())
 
     def test_install_registers_shell_once(self):
-        if BINARY is None:
-            self.skipTest("Pass a built skm binary to check shell registration")
-        self.make_archive(BINARY.read_bytes())
         for _ in range(2):
             output = self.run_installer(SHELL="/bin/bash")
             self.assertEqual(output.returncode, 0, output.stderr)
         for name in [".bashrc", ".bash_profile"]:
             self.assertEqual((self.root / name).read_text().count("# >>> ssh-key-man >>>"), 1)
-        self.assertFalse(list(self.root.glob("*.skm-backup-*")))
+        self.assertFalse(list(self.root.glob("*.skm-backup.*")))
+
+    def test_bash_profile_backup_and_dead_agent_fallback(self):
+        profile = self.root / ".profile"
+        profile.write_text("export EDITOR=vim\n")
+        profile.chmod(0o640)
+        output = self.run_installer()
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertFalse((self.root / ".bash_profile").exists())
+        self.assertTrue(profile.read_text().startswith("export EDITOR=vim\n"))
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o640)
+        backups = list(self.root.glob(".profile.skm-backup.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "export EDITOR=vim\n")
+        self.assertEqual(backups[0].stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.run_installer().returncode, 0)
+        self.assertEqual(len(list(self.root.glob(".profile.skm-backup.*"))), 1)
+        active = self.root / "active.sock"
+        agent = subprocess.Popen(["ssh-agent", "-D", "-a", str(active)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(100):
+                if active.exists():
+                    break
+                time.sleep(0.01)
+            self.assertTrue(active.exists())
+            dead = self.root / "dead.sock"
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(dead))
+            for inherited in [None, str(active), str(dead), str(self.root / "missing.sock")]:
+                env = {**self.env}
+                env.pop("SSH_AUTH_SOCK", None)
+                if inherited:
+                    env["SSH_AUTH_SOCK"] = inherited
+                result = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$HOME/.bashrc"; printf "%s" "$SSH_AUTH_SOCK"'], env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, str(active) if inherited == str(active) else str(self.root / ".ssh/agent.sock"))
+        finally:
+            agent.terminate()
+            agent.wait(timeout=5)
+
+    def test_zsh_preserves_symlink_and_uncalled_export(self):
+        config = self.root / "dotfiles"
+        config.mkdir()
+        target = config / "zshrc"
+        original = 'setup_agent() {\n    export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"\n}\n'
+        target.write_text(original)
+        link = config / ".zshrc"
+        link.symlink_to("zshrc")
+        for _ in range(2):
+            result = self.run_installer(SHELL="/bin/zsh", ZDOTDIR=str(config))
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), "zshrc")
+        self.assertTrue(target.read_text().startswith(original))
+        self.assertEqual(target.read_text().count("# >>> ssh-key-man >>>"), 1)
+        self.assertEqual(len(list(config.glob("zshrc.skm-backup.*"))), 1)
+        env = {**self.env}
+        env.pop("SSH_AUTH_SOCK", None)
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-c", '. "$1"; printf "%s" "$SSH_AUTH_SOCK"', "bash", str(target)], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, str(self.root / ".ssh/agent.sock"))
+
+    def test_fish_uses_dedicated_configuration(self):
+        config = self.root / "settings"
+        for _ in range(2):
+            result = self.run_installer(SHELL="/bin/fish", XDG_CONFIG_HOME=str(config))
+            self.assertEqual(result.returncode, 0, result.stderr)
+        text = (config / "fish/conf.d/ssh-key-man.fish").read_text()
+        self.assertEqual(text.count("# >>> ssh-key-man >>>"), 1)
+        self.assertIn("set -gx SSH_AUTH_SOCK", text)
+        self.assertFalse((config / "fish/config.fish").exists())
+
+    def test_rejects_invalid_or_unsafe_shell_setup(self):
+        for overrides in [{"SHELL": "/bin/tcsh"}, {"SHELL": ""}, {"SHELL": "/bin/zsh", "ZDOTDIR": "relative"}, {"SHELL": "/bin/fish", "XDG_CONFIG_HOME": "relative"}]:
+            result = self.run_installer(**overrides)
+            self.assertNotEqual(result.returncode, 0, result.stderr)
+        file = self.root / ".zshrc"
+        for original in ["# >>> ssh-key-man >>>\ncustom\n", "# <<< ssh-key-man <<<\n"]:
+            file.write_text(original)
+            result = self.run_installer(SHELL="/bin/zsh")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(file.read_text(), original)
+        file.write_text("existing\n")
+        file.chmod(0o666)
+        result = self.run_installer(SHELL="/bin/zsh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(file.read_text(), "existing\n")
 
     def test_cli_update_replaces_its_own_installation(self):
         if BINARY is None:

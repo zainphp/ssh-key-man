@@ -1,7 +1,6 @@
 pub mod interactive;
-pub(crate) mod shell;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(version, about = "Manage SSH keys, host aliases, and your SSH agent")]
@@ -22,26 +21,4 @@ pub enum Commands {
     Load { filename: Option<String> },
     /// Check the SSH agent, start one if needed, and set up the shell connection
     Doctor,
-    /// Print SSH agent settings, or add them to shell startup files with --install
-    Init {
-        #[arg(value_enum)]
-        shell: Option<Shell>,
-        /// Add settings to startup files (detects your shell from SHELL when omitted)
-        #[arg(long)]
-        install: bool,
-    },
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-pub enum Shell {
-    Bash,
-    Zsh,
-    Fish,
-}
-
-pub fn shell_init(shell: Shell) -> &'static str {
-    match shell {
-        Shell::Bash | Shell::Zsh => "export SSH_AUTH_SOCK=\"$HOME/.ssh/agent.sock\"",
-        Shell::Fish => "set -gx SSH_AUTH_SOCK \"$HOME/.ssh/agent.sock\"",
-    }
 }

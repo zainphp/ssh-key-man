@@ -9,7 +9,7 @@ pub(crate) fn agent_hint(socket: &Path) -> Option<&'static str> {
     if shell_socket.is_some() && shell_socket == loaded_socket {
         return None;
     }
-    Some("Your shell is not connected to this SSH agent.\nBash/Zsh: eval \"$(skm init)\"\nFish: skm init fish | source\nFor future terminals, run skm init --install once.")
+    Some("Your shell is not connected to this SSH agent.\nRerun the installer to set up future terminals.\nFor this terminal, run:\nBash/Zsh: export SSH_AUTH_SOCK=\"$HOME/.ssh/agent.sock\"\nFish: set -gx SSH_AUTH_SOCK \"$HOME/.ssh/agent.sock\"")
 }
 
 pub(crate) fn print_agent_hint(socket: &Path) {
