@@ -14,14 +14,6 @@ pub(crate) fn dispatch(cli: cli::Cli) -> Result<()> {
         Some(cli::Commands::Gen) => generate_wizard(&keys::ssh_dir()?),
         Some(cli::Commands::Load { filename }) => load_keys(&keys::ssh_dir()?, filename),
         Some(cli::Commands::Doctor) => check_agent(&keys::ssh_dir()?),
-        Some(cli::Commands::Init { shell, install }) => {
-            if install {
-                cli::shell::install(shell)
-            } else {
-                println!("{}", cli::shell_init(shell.unwrap_or(cli::Shell::Bash)));
-                Ok(())
-            }
-        }
     }
 }
 
@@ -109,7 +101,7 @@ fn check_agent(dir: &Path) -> Result<()> {
         );
         println!("  {:<16} {}", "Loaded keys", agent.fingerprints.len());
         println!("\n{}", Tone::Accent.stdout("Shell setup"));
-        println!("  Add the output of skm init to your shell startup file.");
+        println!("  Rerun the installer to set up your shell, then open a new terminal.");
     }
     if !missing.is_empty() {
         bail!("Could not find these commands: {}. Install the missing OpenSSH commands and make sure they are in PATH. ssh-copy-id may need a separate installation.", missing.join(", "));
