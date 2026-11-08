@@ -12,9 +12,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def publish_script():
+def workflow_script(step_name='Publish GitHub release'):
     workflow = (ROOT / '.github/workflows/release.yml').read_text()
-    step = workflow.split('      - name: Publish GitHub release\n', 1)[1]
+    step = workflow.split(f'      - name: {step_name}\n', 1)[1]
     lines = step.split('        run: |\n', 1)[1].splitlines()
     body = []
     for line in lines:
@@ -22,6 +22,36 @@ def publish_script():
             break
         body.append(line)
     return textwrap.dedent('\n'.join(body))
+
+
+class WorkflowScopeTests(unittest.TestCase):
+    def test_ci_and_release_do_not_accept_cross_ref_checkout_inputs(self):
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        release = (ROOT / '.github/workflows/release.yml').read_text()
+        self.assertNotIn('inputs:', ci)
+        self.assertNotIn('inputs.ref', ci)
+        self.assertNotIn('inputs:', release)
+        self.assertNotIn('inputs.tag', release)
+        self.assertNotIn('Check out source for CI', ci)
+        self.assertIn('    needs: validate-ref\n    uses: ./.github/workflows/ci.yml', release)
+
+    def test_release_guard_accepts_version_tags_and_rejects_other_refs(self):
+        script = workflow_script('Check release ref')
+        for ref, expected in [
+            ('refs/tags/v0.1.1', 0),
+            ('refs/tags/v0.1.2-beta.1', 0),
+            ('refs/heads/main', 1),
+            ('refs/heads/v0.1.1', 1),
+            ('refs/pull/1/merge', 1),
+            ('refs/tags/other', 1),
+            ('refs/tags/v', 1),
+            ('', 1),
+        ]:
+            with self.subTest(ref=ref):
+                output = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], env={**os.environ, 'RELEASE_REF': ref}, capture_output=True, text=True)
+                self.assertEqual(output.returncode, expected, output.stderr)
+                if expected:
+                    self.assertIn('Run this workflow with --ref', output.stderr)
 
 
 class PublishingTests(unittest.TestCase):
@@ -73,7 +103,7 @@ sys.exit(99)
 
     def publish(self, **overrides):
         self.log.unlink(missing_ok=True)
-        output = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', publish_script()], cwd=self.root, env={**self.env, **overrides}, capture_output=True, text=True)
+        output = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', workflow_script()], cwd=self.root, env={**self.env, **overrides}, capture_output=True, text=True)
         calls = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
         return output, calls
 

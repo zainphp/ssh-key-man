@@ -3,18 +3,26 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release tag to build and publish
-        required: true
-        type: string
 permissions:
   contents: read
 jobs:
+  validate-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release ref
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          case "$RELEASE_REF" in
+            refs/tags/v?*) ;;
+            *)
+              echo "Release runs require a version tag. Run this workflow with --ref v<VERSION>, not a branch." >&2
+              exit 1
+              ;;
+          esac
   checks:
+    needs: validate-ref
     uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
   build:
     needs: checks
     strategy:
@@ -32,15 +40,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
       - name: Check release version
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           python3 - <<'PY'
           import os, tomllib
@@ -76,7 +82,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     concurrency:
-      group: publish-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+      group: publish-${{ github.repository }}-${{ github.ref_name }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -90,7 +96,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
             archive="dist/ssh-key-man-$target.tar.gz"
