@@ -1,4 +1,5 @@
 pub mod interactive;
+pub(crate) mod shell;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -21,10 +22,13 @@ pub enum Commands {
     Load { filename: Option<String> },
     /// Check the SSH agent, start one if needed, and set up the shell connection
     Doctor,
-    /// Print SSH agent settings to add to your shell startup file
+    /// Print SSH agent settings, or add them to shell startup files with --install
     Init {
-        #[arg(value_enum, default_value = "bash")]
-        shell: Shell,
+        #[arg(value_enum)]
+        shell: Option<Shell>,
+        /// Add settings to startup files (detects your shell from SHELL when omitted)
+        #[arg(long)]
+        install: bool,
     },
 }
 

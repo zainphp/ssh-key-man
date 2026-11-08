@@ -14,9 +14,13 @@ pub(crate) fn dispatch(cli: cli::Cli) -> Result<()> {
         Some(cli::Commands::Gen) => generate_wizard(&keys::ssh_dir()?),
         Some(cli::Commands::Load { filename }) => load_keys(&keys::ssh_dir()?, filename),
         Some(cli::Commands::Doctor) => check_agent(&keys::ssh_dir()?),
-        Some(cli::Commands::Init { shell }) => {
-            println!("{}", cli::shell_init(shell));
-            Ok(())
+        Some(cli::Commands::Init { shell, install }) => {
+            if install {
+                cli::shell::install(shell)
+            } else {
+                println!("{}", cli::shell_init(shell.unwrap_or(cli::Shell::Bash)));
+                Ok(())
+            }
         }
     }
 }
@@ -67,6 +71,7 @@ fn load_keys(dir: &Path, filename: Option<String>) -> Result<()> {
     if !errors.is_empty() {
         bail!("{}", errors.join("\n"));
     }
+    cli::interactive::print_agent_hint(&agent.socket);
     Ok(())
 }
 
@@ -150,13 +155,17 @@ fn generate_wizard(dir: &Path) -> Result<()> {
         }
         Ok(())
     })();
-    let load = agent::ensure(dir).and_then(|mut agent| agent::load(&mut agent, &key));
-    if load.is_ok() {
+    let load = agent::ensure(dir).and_then(|mut agent| {
+        agent::load(&mut agent, &key)?;
+        Ok(agent)
+    });
+    if let Ok(agent) = &load {
         println!(
             "{} {}",
             Tone::Success.stdout("Loaded in agent:"),
             key.path.display()
         );
+        cli::interactive::print_agent_hint(&agent.socket);
     }
     let retry = keys::load_retry(&key);
     match (registration, load) {

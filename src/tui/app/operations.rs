@@ -12,6 +12,9 @@ impl App {
         let result = match operation {
             Operation::Connect(alias) => {
                 let mut command = crate::process::command("ssh")?;
+                if let Ok(Some(agent)) = agent::current(dir) {
+                    command.env("SSH_AUTH_SOCK", agent.socket);
+                }
                 command.arg("--").arg(&alias);
                 crate::process::interactive(
                     &mut command,
@@ -45,6 +48,7 @@ impl App {
                         "Already loaded"
                     }
                 );
+                crate::cli::interactive::print_agent_hint(&agent.socket);
                 return Ok(RunState::Finished);
             }
             Operation::Delete(key) => {
@@ -62,8 +66,12 @@ impl App {
                     .map(|(remote, port)| keys::deploy(&key, remote, *port))
                     .transpose();
                 println!("Step 3 of 3: loading the key into the SSH agent.");
-                let loaded = agent::ensure(dir).and_then(|mut agent| agent::load(&mut agent, &key));
+                let loaded = agent::ensure(dir).and_then(|mut agent| {
+                    agent::load(&mut agent, &key)?;
+                    Ok(agent)
+                });
                 let failed = registration.is_err() || loaded.is_err();
+                let mut tone = if failed { Tone::Danger } else { Tone::Success };
                 let mut messages = vec![format!("Key saved: {}", key.path.display())];
                 match registration {
                     Ok(Some(())) => messages.push("Public key added to the server.".into()),
@@ -71,16 +79,21 @@ impl App {
                     Err(e) => messages.push(format!("Remote setup failed: {e:#}")),
                 }
                 match loaded {
-                    Ok(_) => messages.push("Loaded in agent.".into()),
+                    Ok(agent) => {
+                        messages.push("Loaded in agent.".into());
+                        if let Some(hint) = crate::cli::interactive::agent_hint(&agent.socket) {
+                            messages.push(hint.into());
+                            if !failed {
+                                tone = Tone::Warning;
+                            }
+                        }
+                    }
                     Err(e) => messages.push(format!(
                         "Agent loading failed: {e:#}. Retry with {}.",
                         keys::load_retry(&key)
                     )),
                 }
-                self.message.set(
-                    messages.join("\n"),
-                    if failed { Tone::Danger } else { Tone::Success },
-                );
+                self.message.set(messages.join("\n"), tone);
                 self.wizard = None;
                 Ok(())
             }

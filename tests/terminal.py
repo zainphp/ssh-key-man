@@ -191,7 +191,7 @@ def main():
             original = "# Preserve this file\nHost existing\n    HostName old.example.invalid\n    ProxyJump gateway\n\nHost *\n    ServerAliveInterval 30\n"
             config_path.write_text(original)
             ssh_stub = tools / "ssh"
-            ssh_stub.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ -t 0 ] && [ -t 1 ] || exit 92\nstty -a | grep -q -- '-icanon' && exit 93\nprintf 'SSH session ready for %s\\n' \"$2\"\nIFS= read -r command\n[ \"$command\" = exit ] || { echo 'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!' >&2; echo 'Host key verification failed.' >&2; exit 255; }\n")
+            ssh_stub.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ -t 0 ] && [ -t 1 ] || exit 92\nstty -a | grep -q -- '-icanon' && exit 93\n[ \"${SSH_AUTH_SOCK:-}\" -ef \"$SKM_TEST_SOCKET\" ] || exit 94\nssh-add -l >/dev/null 2>&1 || exit 95\nprintf 'SSH session ready for %s\\n' \"$2\"\nIFS= read -r command\n[ \"$command\" = exit ] || { echo 'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!' >&2; echo 'Host key verification failed.' >&2; exit 255; }\n")
             ssh_stub.chmod(0o700)
             hosts = Session(binary, ["hosts"], remote_env, tui=True)
             try:
@@ -224,8 +224,18 @@ def main():
                 hosts.finish()
             finally:
                 hosts.close()
-            for command, expected in [("exit", 0), ("fail", 1)]:
-                connection = Session(binary, ["hosts"], remote_env, tui=True)
+            for command, expected, parent_socket in [
+                ("exit", 0, str(socket)),
+                ("fail", 1, str(socket)),
+                ("exit", 0, None),
+                ("exit", 0, str(home / "missing-agent.sock")),
+            ]:
+                connection_env = {**remote_env, "SKM_TEST_SOCKET": str(socket)}
+                if parent_socket is None:
+                    connection_env.pop("SSH_AUTH_SOCK", None)
+                else:
+                    connection_env["SSH_AUTH_SOCK"] = parent_socket
+                connection = Session(binary, ["hosts"], connection_env, tui=True)
                 try:
                     connection.expect("Enter: connect and close skm")
                     connection.send("\r")
@@ -238,6 +248,26 @@ def main():
                     assert connection.transcript.count(b"\x1b[?1049h") == 1, "The TUI reopened after SSH"
                     output_start = connection.transcript.index(b"SSH session ready for work")
                     assert b"\x1b[?1049l" not in connection.transcript[output_start:], "Terminal cleanup can overwrite SSH output"
+                finally:
+                    connection.close()
+            ssh_only = home / "ssh-only"
+            ssh_only.mkdir()
+            ssh_without_agent = ssh_only / "ssh"
+            ssh_without_agent.write_text("#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = -- ] && [ \"$2\" = work ] || exit 91\n[ \"${SSH_AUTH_SOCK-unset}\" = \"$SKM_TEST_INHERITED_SOCKET\" ] || exit 94\nprintf 'SSH without ssh-add ready\\n'\nIFS= read -r command\n[ \"$command\" = exit ]\n")
+            ssh_without_agent.chmod(0o700)
+            for inherited_socket in [None, str(socket)]:
+                connection_env = {**env, "PATH": str(ssh_only), "SKM_TEST_INHERITED_SOCKET": inherited_socket or "unset"}
+                if inherited_socket is None:
+                    connection_env.pop("SSH_AUTH_SOCK", None)
+                else:
+                    connection_env["SSH_AUTH_SOCK"] = inherited_socket
+                connection = Session(binary, ["hosts"], connection_env, tui=True)
+                try:
+                    connection.expect("Enter: connect and close skm")
+                    connection.send("\r")
+                    connection.expect("SSH without ssh-add ready")
+                    connection.send("exit\n")
+                    connection.finish()
                 finally:
                     connection.close()
             hosts = Session(binary, ["hosts"], env, tui=True)
@@ -353,7 +383,7 @@ def main():
         finally:
             agent.terminate()
             agent.wait(timeout=5)
-    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, confirmed key deletion, agent unloading, and terminal restoration")
+    print("PASS: CLI encrypted generation, hidden passphrases, RSA TUI wizard, remote failure recovery, host alias editing, backups, cancellation, validation, loading, arrow pickers, Esc quit, terminal actions that close skm, host connections without ssh-add, confirmed key deletion, agent unloading, and terminal restoration")
 
 
 def audit_regressions(binary):

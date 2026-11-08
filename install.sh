@@ -7,7 +7,7 @@ fail() {
 }
 
 install_skm() {
-    for tool in curl tar uname mktemp awk mkdir mv chmod ln rm; do
+    for tool in curl tar uname mktemp awk grep mkdir mv chmod ln rm; do
         command -v "$tool" >/dev/null 2>&1 || fail "Could not find $tool. Install it and try again."
     done
     if command -v sha256sum >/dev/null 2>&1; then
@@ -80,6 +80,13 @@ install_skm() {
     mv -f "$work_dir/ssh-key-man" "$install_dir/ssh-key-man" || fail "Could not replace $install_dir/ssh-key-man. Check file permissions and try again."
     mv -f "$work_dir/skm" "$install_dir/skm" || fail "Could not update $install_dir/skm. Check file permissions and rerun the installer."
     printf 'Installed %s in %s\n' "$installed_version" "$install_dir"
+    if "$install_dir/ssh-key-man" init --help | grep -q -- '--install'; then
+        if ! "$install_dir/ssh-key-man" init --install; then
+            printf 'The binaries were installed, but shell setup did not finish. Fix the error above and run skm init --install.\n' >&2
+        fi
+    else
+        printf 'This release needs manual shell setup. Add the output of skm init to your shell startup file.\n'
+    fi
     case ":${PATH:-}:" in
         *:"$install_dir":*) printf 'Run skm doctor to check OpenSSH and your agent.\n' ;;
         *) printf 'Add %s to PATH, then run skm doctor.\n' "$install_dir" ;;

@@ -115,6 +115,17 @@ shutil.copyfile(source, args[args.index('-o') + 1])
         self.assertNotEqual(output.returncode, 0)
         self.assertFalse((self.destination / "ssh-key-man").exists())
 
+    def test_install_registers_shell_once(self):
+        if BINARY is None:
+            self.skipTest("Pass a built skm binary to check shell registration")
+        self.make_archive(BINARY.read_bytes())
+        for _ in range(2):
+            output = self.run_installer(SHELL="/bin/bash")
+            self.assertEqual(output.returncode, 0, output.stderr)
+        for name in [".bashrc", ".bash_profile"]:
+            self.assertEqual((self.root / name).read_text().count("# >>> ssh-key-man >>>"), 1)
+        self.assertFalse(list(self.root.glob("*.skm-backup-*")))
+
     def test_cli_update_replaces_its_own_installation(self):
         if BINARY is None:
             self.skipTest("Pass a built skm binary to check the CLI updater")

@@ -10,7 +10,7 @@ Install or update on Linux, macOS, or WSL (Intel or ARM64):
 curl -fsSL https://raw.githubusercontent.com/zainphp/ssh-key-man/main/install.sh | sh
 ```
 
-The installer downloads a prebuilt GitHub release, verifies its SHA256 checksum, and installs `ssh-key-man` and the `skm` alias in `~/.local/bin`. Rust is not required. Add that directory to `PATH` if the installer asks. It does not use sudo, install system packages, or edit shell files.
+The installer downloads a prebuilt GitHub release, verifies its SHA256 checksum, and installs `ssh-key-man` and the `skm` alias in `~/.local/bin`. Rust is not required. Add that directory to `PATH` if the installer asks. It also adds agent settings to startup files for Bash, Zsh, or Fish when the downloaded release supports automatic setup. It does not use sudo or install system packages.
 
 ## Updates
 
@@ -59,7 +59,8 @@ skm gen                 # Create a key and optionally add its public key to a se
 skm load id_ed25519     # Load one private key from ~/.ssh/
 skm load                # Load all discovered private keys
 skm doctor              # Find/start an agent and update ~/.ssh/agent.sock
-skm init zsh            # Print shell configuration (bash and fish also supported)
+skm init --install     # Add agent settings to your shell startup files
+skm init zsh           # Print shell configuration (bash and fish also supported)
 ```
 
 ## Host aliases
@@ -87,21 +88,27 @@ After creating a key, choose whether to add its public key on `user@hostname`, w
 
 ## Agent and shell setup
 
-Add this line to `~/.zshrc` or `~/.bashrc`:
+Add agent settings once for future terminals:
 
 ```sh
-export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+skm init --install
 ```
 
-For Fish, add this to `~/.config/fish/config.fish`:
+Setup detects your login shell from `SHELL`. To choose one explicitly, use `skm init zsh --install` (or `bash` / `fish`). Existing files receive a private backup beside the original before changes. Repeating setup does not add duplicate managed blocks. Dotfile symlinks are preserved. Startup settings keep an existing agent, including a forwarded agent, when it responds to `ssh-add -l`. Otherwise they select `~/.ssh/agent.sock`.
 
-```fish
-set -gx SSH_AUTH_SOCK "$HOME/.ssh/agent.sock"
+Zsh uses `$ZDOTDIR/.zshrc` when exported, otherwise `~/.zshrc`. Bash uses `~/.bashrc` and the first existing login file (`.bash_profile`, `.bash_login`, or `.profile`). Fish uses `$XDG_CONFIG_HOME/fish/conf.d/ssh-key-man.fish`, defaulting to `~/.config/fish/conf.d/ssh-key-man.fish`.
+
+Open a new terminal after setup. For the current Bash or Zsh session, run:
+
+```sh
+eval "$(skm init)"
 ```
+
+In Fish, run `skm init fish | source` instead. Loading a key in skm cannot change the parent shell's environment. A key can be loaded in skm's agent while a plain `ssh` command still asks for its passphrase if the shell points to another agent or has no `SSH_AUTH_SOCK`. The Hosts page passes the verified agent socket to its SSH session directly. Explicit `IdentityAgent` settings in SSH config still take precedence.
 
 `skm doctor` groups command availability, agent details, and shell setup into a readable report. It checks `ssh`, `ssh-keygen`, `ssh-add`, `ssh-agent`, and `ssh-copy-id`, and exits with an error if any are missing. Missing `ssh-add` skips agent setup and reports how to fix it. Colors are disabled when output is redirected or `NO_COLOR=1` is set.
 
-Loading a key finds or starts an SSH agent and creates the link automatically. Use `skm doctor` only if you need to repair the connection. A child process cannot change its parent shell's environment. `skm init` prints configuration only; it does not edit startup files. After a reboot, run `skm doctor` or load a key to find or start a new agent.
+Loading a key finds or starts an SSH agent and creates the link automatically. Use `skm doctor` if you need to repair the connection. `skm init` without `--install` prints configuration only. After a reboot, load a key or run `skm doctor` to find or start an agent.
 
 Agent selection checks `SSH_AUTH_SOCK`, then the stable link, then `/tmp/ssh-*/agent.*` (and the system temporary directory on macOS), before starting `ssh-agent`. Each socket must belong to the current user and answer `ssh-add`. Probes time out after three seconds. Multiple instances serialize socket updates with a file lock. A regular file at `~/.ssh/agent.sock` is never replaced. The stable link follows whichever verified agent was selected, including a forwarded agent if that is your active `SSH_AUTH_SOCK`.
 
