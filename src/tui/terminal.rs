@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io::{self, Stdout};
@@ -15,9 +18,8 @@ impl TerminalSession {
         self.active = true;
         enable_raw_mode()
             .context("Could not enable terminal input. Run skm in an interactive terminal.")?;
-        execute!(io::stdout(), EnterAlternateScreen)?;
-        let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-        terminal.clear()?;
+        execute!(io::stdout(), EnterAlternateScreen, Clear(ClearType::All))?;
+        let terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
         Ok(terminal)
     }
     pub fn restore() {
