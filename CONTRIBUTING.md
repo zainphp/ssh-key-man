@@ -8,10 +8,10 @@ Publishing creates or reuses a draft release, checks that all four platform arch
 
 Published releases are left unchanged on reruns, whether or not they are immutable. Use a new version and tag to publish fixes. This workflow supports [GitHub release immutability](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases); enable it in the repository's release settings to lock published assets and tags. Publishing jobs for the same tag run one at a time.
 
-To recover a failed publication without moving its tag, push the workflow fix to `main`, then run the Release workflow manually with the existing tag:
+To retry a failed publication, run the Release workflow on the existing tag:
 
 ```sh
-gh workflow run release.yml --repo zainphp/ssh-key-man --ref main -f tag=v0.1.1
+gh workflow run release.yml --repo zainphp/ssh-key-man --ref v0.1.1
 ```
 
-The manual run checks and builds the tagged source using the workflow on `main`. Re-running an old failed run uses its original workflow, so it will not pick up a later workflow fix.
+Manual runs use the workflow and source at the selected tag. CI and release builds check out the triggering revision, keeping code execution in that revision's cache scope. Release runs on branches are rejected. This retry command applies to tags containing this workflow; older tags retain their original workflow and inputs. To include a workflow fix, commit it and create a new version tag; rerunning an existing tag does not pick up changes from `main`.
