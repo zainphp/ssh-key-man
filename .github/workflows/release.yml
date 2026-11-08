@@ -74,6 +74,9 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -88,12 +91,26 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/* --clobber
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
+            archive="dist/ssh-key-man-$target.tar.gz"
+            for asset in "$archive" "$archive.sha256"; do
+              if [[ ! -s "$asset" ]]; then
+                echo "Missing or empty release asset: $asset. Rerun the build before publishing." >&2
+                exit 1
+              fi
+            done
+          done
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
+            if [[ "$draft" != true ]]; then
+              echo "Release $RELEASE_TAG is already published. Assets were kept. Use a new version to publish changes."
+              exit 0
+            fi
           else
             options=()
             if [[ "$RELEASE_TAG" == *-* ]]; then
               options+=(--prerelease)
             fi
-            gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes "${options[@]}"
+            gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes "${options[@]}"
           fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
